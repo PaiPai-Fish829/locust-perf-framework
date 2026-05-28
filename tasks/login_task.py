@@ -1,7 +1,7 @@
 from locust import task
 
 from config import settings
-from scenarios.login_config import LOGIN_PASSWORD, LOGIN_PATH, LOGIN_USERNAME
+from tasks.login_config import LOGIN_PASSWORD, LOGIN_PATH, LOGIN_USERNAME
 
 
 def build_login_payload(user) -> dict:

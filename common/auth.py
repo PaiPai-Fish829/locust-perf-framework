@@ -3,7 +3,7 @@ from typing import Dict
 from locust.clients import ResponseContextManager
 
 from common.assertions import assert_status_ok
-from scenarios.login_config import LOGIN_PASSWORD, LOGIN_PATH, LOGIN_USERNAME
+from tasks.login_config import LOGIN_PASSWORD, LOGIN_PATH, LOGIN_USERNAME
 
 
 def login(client) -> Dict[str, str]:

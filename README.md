@@ -23,9 +23,9 @@ pip install -r requirements.txt
 locust-perf-framework/
 ├── tasks/                         # 原子任务层：单接口请求定义（可复用）
 │   ├── login_task.py
+│   ├── login_config.py            # 登录接口级配置（路径、默认账号等）
 │   └── __init__.py
 ├── scenarios/                     # 场景层：组织业务流程（登录、流程编排等）
-│   ├── login_config.py            # 登录接口级配置（路径、默认账号等）
 │   ├── login_scenario.py
 │   └── __init__.py
 ├── common/                        # 公共能力：认证、参数化加载、断言、日志、指标导出
@@ -138,7 +138,7 @@ Grafana 预置了 `Locust Overview` 面板：
 ## 6. 配置外置（根目录配置文件 + 环境管理）
 
 项目配置统一存放在根目录 `locust-config.yaml`，`config/settings.py` 只负责读取与分发。
-登录场景的接口路径与默认账号属于接口级配置，放在 `scenarios/login_config.py`，不再放入全局环境配置。
+登录场景的接口路径与默认账号属于接口级配置，放在 `tasks/login_config.py`，不再放入全局环境配置。
 
 支持环境切换：
 

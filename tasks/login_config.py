@@ -1,4 +1,4 @@
-"""登录场景专用配置（接口级），不放入全局环境配置。"""
+"""登录任务专用配置（接口级），不放入全局环境配置。"""
 
 LOGIN_PATH = "/ecshop/user.php"
 LOGIN_USERNAME = "test"
