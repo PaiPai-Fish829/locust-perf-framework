@@ -17,6 +17,52 @@ source .venv/bin/activate  # Windows 用 .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+## 项目结构（当前）
+
+```text
+locust-perf-framework/
+├── tasks/                         # 原子任务层：单接口请求定义（可复用）
+│   ├── login_task.py
+│   └── __init__.py
+├── scenarios/                     # 场景层：组织业务流程（登录、流程编排等）
+│   ├── login_config.py            # 登录接口级配置（路径、默认账号等）
+│   ├── login_scenario.py
+│   └── __init__.py
+├── common/                        # 公共能力：认证、参数化加载、断言、日志、指标导出
+│   ├── auth.py
+│   ├── data_loader.py
+│   ├── assertions.py
+│   ├── logger.py
+│   ├── metrics.py                 # 暴露 /metrics，供 Prometheus 抓取
+│   └── __init__.py
+├── shapes/                        # 压测形状策略（LoadTestShape）
+│   ├── stage_shape.py             # 阶梯压测：每 30 秒 +10，直到 100
+│   └── __init__.py
+├── config/                        # 配置读取与分发（从根目录 YAML 加载到运行时）
+│   ├── settings.py
+│   └── __init__.py
+├── monitoring/                    # 监控栈配置：Prometheus + Grafana
+│   ├── docker-compose.yml
+│   ├── prometheus/
+│   │   └── prometheus.yml
+│   └── grafana/
+│       ├── dashboards/
+│       │   └── locust-overview.json
+│       └── provisioning/
+│           ├── datasources/prometheus.yml
+│           └── dashboards/dashboard.yml
+├── reports/                       # 运行产物目录（CSV 统计、失败、异常等）
+├── scripts/                       # 启动入口与运行控制脚本
+│   ├── run.py                     # 统一命令入口：load / stress
+│   └── __init__.py
+├── locust-config.yaml             # 根配置文件（环境、端口、并发、运行时参数）
+├── locustfile.py                  # Locust 入口（用户类与 shape 注册）
+├── requirements.txt               # Python 依赖
+└── README.md
+```
+
+> 说明：`__pycache__/`、`.venv/`、运行时生成的 CSV 文件不属于源码结构，文档中默认省略。
+
 ## 3. 运行示例
 
 ### 3.1 WebUI 模式（推荐调试）
