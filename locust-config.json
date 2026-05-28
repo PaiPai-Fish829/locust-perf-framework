@@ -1,0 +1,41 @@
+{
+  "active_env": "dev",
+  "environments": {
+    "dev": {
+      "locust_host": "http://192.168.47.129:80",
+      "locust_users": 10,
+      "locust_spawn_rate": 10,
+      "locust_run_time": "5m",
+      "locust_web_port": 8089,
+      "locust_web_reload": true,
+      "login_path": "/ecshop/user.php",
+      "login_username": "test",
+      "login_password": "123456",
+      "data_file": ""
+    },
+    "staging": {
+      "locust_host": "http://staging.example.com",
+      "locust_users": 20,
+      "locust_spawn_rate": 10,
+      "locust_run_time": "10m",
+      "locust_web_port": 8090,
+      "locust_web_reload": true,
+      "login_path": "/ecshop/user.php",
+      "login_username": "staging_user",
+      "login_password": "staging_pass",
+      "data_file": ""
+    },
+    "prod": {
+      "locust_host": "http://prod.example.com",
+      "locust_users": 50,
+      "locust_spawn_rate": 20,
+      "locust_run_time": "15m",
+      "locust_web_port": 8091,
+      "locust_web_reload": false,
+      "login_path": "/ecshop/user.php",
+      "login_username": "prod_user",
+      "login_password": "prod_pass",
+      "data_file": ""
+    }
+  }
+}

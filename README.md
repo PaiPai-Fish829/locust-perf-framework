@@ -27,7 +27,7 @@ python scripts/run.py load
 
 - Locust WebUI: http://localhost:8089
 - 在 UI 中手工设置用户数和启动压测
-- WebUI 端口固定读取 `config/settings.py` 中的 `LOCUST_WEB_PORT`（默认 `8089`）
+- WebUI 端口读取根目录 `locust-config.json` 中当前环境的 `locust_web_port`
 - 若端口被占用会直接报错，避免同机启动多个 WebUI
 - `load` 默认启用自动重载（修改 `.py` 文件后自动重启 Locust 进程）
 
@@ -89,29 +89,19 @@ Grafana 预置了 `Locust Overview` 面板：
 - Received KB/sec
 - Sent KB/sec
 
-## 6. 配置外置（环境变量）
+## 6. 配置外置（根目录配置文件 + 环境管理）
 
-可通过环境变量覆盖默认配置（见 `config/settings.py`）：
+项目配置统一存放在根目录 `locust-config.json`，`config/settings.py` 只负责读取与分发。
 
-- `LOCUST_HOST`（默认 `http://192.168.47.129:80`）
-- `LOCUST_USERS`
-- `LOCUST_SPAWN_RATE`
-- `LOCUST_RUN_TIME`
-- `LOCUST_WEB_PORT`（WebUI 端口，默认 `8089`）
-- `LOCUST_WEB_RELOAD`（WebUI 自动重载，默认 `true`）
-- `LOCUST_ENABLE_SHAPE`（`0/1`，默认 `load` 子命令 `0`，`stress` 子命令 `1`）
-- `LOGIN_PATH`
-- `LOGIN_USERNAME`
-- `LOGIN_PASSWORD`
-- `DATA_FILE`（参数化数据文件，支持 `.csv/.json`）
+支持环境切换：
 
-示例：
+- 通过配置文件 `active_env` 指定默认环境（如 `dev/staging/prod`）
+- 通过环境变量 `LOCUST_ENV` 临时覆盖当前环境
 
-Linux / Mac:
+PowerShell 示例：
 
-```bash
-export LOCUST_HOST="http://192.168.47.129:80"
-export DATA_FILE="./testdata/login_users.csv"
+```powershell
+$env:LOCUST_ENV="staging"
 python scripts/run.py load
 ```
 
