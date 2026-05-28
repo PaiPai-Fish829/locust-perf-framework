@@ -1,6 +1,7 @@
 from locust import task
 
 from config import settings
+from scenarios.login_config import LOGIN_PASSWORD, LOGIN_PATH, LOGIN_USERNAME
 
 
 def build_login_payload(user) -> dict:
@@ -9,15 +10,15 @@ def build_login_payload(user) -> dict:
         row = user.param_rows[user._row_index % len(user.param_rows)]
         user._row_index += 1
         return {
-            "username": row.get("username", settings.LOGIN_USERNAME),
-            "password": row.get("password", settings.LOGIN_PASSWORD),
+            "username": row.get("username", LOGIN_USERNAME),
+            "password": row.get("password", LOGIN_PASSWORD),
             "act": row.get("act", "act_login"),
             "back_act": row.get("back_act", "./index.php"),
             "submit": row.get("submit", "1"),
         }
     return {
-        "username": settings.LOGIN_USERNAME,
-        "password": settings.LOGIN_PASSWORD,
+        "username": LOGIN_USERNAME,
+        "password": LOGIN_PASSWORD,
         "act": "act_login",
         "back_act": "./index.php",
         "submit": "1",
@@ -33,7 +34,7 @@ def login_task(user):
 
     # 请求写法与 requests 一致：headers、params、json/data 均可直接传。
     with user.client.post(
-        settings.LOGIN_PATH,
+        LOGIN_PATH,
         data=payload,
         headers=headers,
         name="POST /ecshop/user.php login",

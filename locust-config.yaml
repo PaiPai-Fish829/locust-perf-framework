@@ -17,13 +17,8 @@ environments:
     # WebUI 模式是否自动重载 py 文件变更
     locust_web_reload: true
 
-    # 登录接口路径
-    login_path: "/ecshop/user.php"
-    # 默认登录用户名
-    login_username: "test"
-    # 默认登录密码
-    login_password: "123456"
     # 参数化数据文件路径（支持 .csv/.json；空字符串表示不启用）
+    # 仅用于需要数据驱动的场景，不是所有接口都必须配置
     data_file: ""
 
   staging:
@@ -33,9 +28,6 @@ environments:
     locust_run_time: "10m"
     locust_web_port: 8090
     locust_web_reload: true
-    login_path: "/ecshop/user.php"
-    login_username: "staging_user"
-    login_password: "staging_pass"
     data_file: ""
 
   prod:
@@ -46,7 +38,4 @@ environments:
     locust_web_port: 8091
     # 生产环境建议关闭自动重载，避免调试脚本触发重启
     locust_web_reload: false
-    login_path: "/ecshop/user.php"
-    login_username: "prod_user"
-    login_password: "prod_pass"
     data_file: ""

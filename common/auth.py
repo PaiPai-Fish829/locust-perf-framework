@@ -2,21 +2,21 @@ from typing import Dict
 
 from locust.clients import ResponseContextManager
 
-from config import settings
 from common.assertions import assert_status_ok
+from scenarios.login_config import LOGIN_PASSWORD, LOGIN_PATH, LOGIN_USERNAME
 
 
 def login(client) -> Dict[str, str]:
     payload = {
-        "username": settings.LOGIN_USERNAME,
-        "password": settings.LOGIN_PASSWORD,
+        "username": LOGIN_USERNAME,
+        "password": LOGIN_PASSWORD,
         "act": "act_login",
         "back_act": "./index.php",
         "submit": "1",
     }
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
     with client.post(
-        settings.LOGIN_PATH,
+        LOGIN_PATH,
         data=payload,
         headers=headers,
         name="POST /ecshop/user.php login",

@@ -92,6 +92,7 @@ Grafana 预置了 `Locust Overview` 面板：
 ## 6. 配置外置（根目录配置文件 + 环境管理）
 
 项目配置统一存放在根目录 `locust-config.yaml`，`config/settings.py` 只负责读取与分发。
+登录场景的接口路径与默认账号属于接口级配置，放在 `scenarios/login_config.py`，不再放入全局环境配置。
 
 支持环境切换：
 
