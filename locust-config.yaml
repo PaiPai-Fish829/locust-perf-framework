@@ -17,9 +17,21 @@ environments:
     # WebUI 模式是否自动重载 py 文件变更
     locust_web_reload: true
 
-    # 参数化数据文件路径（支持 .csv/.json；空字符串表示不启用）
+    # 参数化数据文件路径（支持 .csv/.yaml/.yml；空字符串表示不启用）
     # 仅用于需要数据驱动的场景，不是所有接口都必须配置
-    data_file: ""
+    data_file: "users.csv"
+    # 数据分配策略：cycle / random（每个虚拟用户在 on_start 固定分配一条）
+    data_strategy: "cycle"
+    test_shape:
+      # stress 默认使用的 shape，可选: stage / stage_hold / none
+      default_shape: "stage"
+      start_users: 10
+      step_users: 10
+      step_duration: 30
+      peak_users: 100
+      peak_hold_time: 60
+      # 0 表示不设置总时长上限（由 shape 自身逻辑决定）
+      total_time_limit: 0
 
   staging:
     locust_host: "http://staging.example.com"
@@ -28,7 +40,16 @@ environments:
     locust_run_time: "10m"
     locust_web_port: 8090
     locust_web_reload: true
-    data_file: ""
+    data_file: "users.csv"
+    data_strategy: "cycle"
+    test_shape:
+      default_shape: "stage"
+      start_users: 10
+      step_users: 10
+      step_duration: 30
+      peak_users: 100
+      peak_hold_time: 60
+      total_time_limit: 0
 
   prod:
     locust_host: "http://prod.example.com"
@@ -38,4 +59,13 @@ environments:
     locust_web_port: 8091
     # 生产环境建议关闭自动重载，避免调试脚本触发重启
     locust_web_reload: false
-    data_file: ""
+    data_file: "users.csv"
+    data_strategy: "cycle"
+    test_shape:
+      default_shape: "stage"
+      start_users: 10
+      step_users: 10
+      step_duration: 30
+      peak_users: 100
+      peak_hold_time: 60
+      total_time_limit: 0

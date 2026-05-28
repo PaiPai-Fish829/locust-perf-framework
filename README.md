@@ -10,7 +10,7 @@
 ## 2. 安装
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/PaiPai-Fish829/locust-perf-framework.git
 cd locust-perf-framework
 python -m venv .venv
 source .venv/bin/activate  # Windows 用 .venv\Scripts\activate
@@ -37,6 +37,7 @@ locust-perf-framework/
 │   └── __init__.py
 ├── shapes/                        # 压测形状策略（LoadTestShape）
 │   ├── stage_shape.py             # 阶梯压测：每 30 秒 +10，直到 100
+│   ├── stage_hold_shape.py        # 阶梯增长 + 峰值保持策略
 │   └── __init__.py
 ├── config/                        # 配置读取与分发（从根目录 YAML 加载到运行时）
 │   ├── settings.py
@@ -55,6 +56,8 @@ locust-perf-framework/
 ├── scripts/                       # 启动入口与运行控制脚本
 │   ├── run.py                     # 统一命令入口：load / stress
 │   └── __init__.py
+├── data/                          # 参数化测试数据（CSV/YAML）
+│   └── users.csv
 ├── locust-config.yaml             # 根配置文件（环境、端口、并发、运行时参数）
 ├── locustfile.py                  # Locust 入口（用户类与 shape 注册）
 ├── requirements.txt               # Python 依赖
@@ -95,12 +98,25 @@ python scripts/run.py load --host http://127.0.0.1:8000 --web-port 8090
 # 无头压测，覆盖并发和时长
 python scripts/run.py stress --users 200 --spawn-rate 20 --run-time 15m
 
+# 启用高级压测 shape（阶梯 + 峰值保持）
+python scripts/run.py stress --shape stage_hold --peak-users 200 --peak-hold-time 120
+
 # 透传 Locust 原生参数
 python scripts/run.py stress --stop-timeout 30 --only-summary
 
 # 关闭自动重载（单次启动）
 python scripts/run.py load --no-reload
 ```
+
+### 3.4 数据参数化准备（CSV/YAML）
+
+默认示例数据位于 `data/users.csv`，字段：
+
+- `username`
+- `password`
+- `expected_code`
+
+运行时会在 `on_start` 为每个虚拟用户分配一条独立数据（支持 `cycle` / `random`）。
 
 ## 4. 启动监控栈
 
@@ -139,17 +155,22 @@ Grafana 预置了 `Locust Overview` 面板：
 
 项目配置统一存放在根目录 `locust-config.yaml`，`config/settings.py` 只负责读取与分发。
 登录场景的接口路径与默认账号属于接口级配置，放在 `tasks/login_config.py`，不再放入全局环境配置。
+高级压测策略参数统一放在环境配置下的 `test_shape` 段。
 
 支持环境切换：
 
+- 配置优先级：环境变量 > 命令行参数 > YAML 默认值
 - 通过配置文件 `active_env` 指定默认环境（如 `dev/staging/prod`）
 - 通过环境变量 `LOCUST_ENV` 临时覆盖当前环境
+- `LOCUST_SHAPE` 覆盖 shape（`none/stage/stage_hold`）
+- `LOCUST_SHAPE_START_USERS / LOCUST_SHAPE_STEP_USERS / LOCUST_SHAPE_STEP_DURATION`
+- `LOCUST_SHAPE_PEAK_USERS / LOCUST_SHAPE_PEAK_HOLD_TIME / LOCUST_SHAPE_TOTAL_TIME_LIMIT`
 
 PowerShell 示例：
 
 ```powershell
 $env:LOCUST_ENV="staging"
-python scripts/run.py load
+python scripts/run.py stress --shape stage_hold --peak-users 200
 ```
 
 ## 7. WebUI 输入框说明
@@ -170,14 +191,29 @@ $env:LOCUST_ENABLE_SHAPE="1"   # 启用 shape
 python scripts/run.py load
 ```
 
-## 8. JMeter 痛点对应方案
+## 8. 高级压测策略（Stage + Hold）
+
+新增 `shapes/stage_hold_shape.py`，支持：
+
+1. 从 `start_users` 起步；
+2. 每 `step_duration` 秒增加 `step_users`，直到 `peak_users`；
+3. 峰值保持 `peak_hold_time` 秒；
+4. 达到 `total_time_limit`（若 >0）或峰值保持结束后自动停止。
+
+推荐命令：
+
+```bash
+python scripts/run.py stress --shape stage_hold
+```
+
+## 9. JMeter 痛点对应方案
 
 - **跨线程传递 Token/Cookie**  
   在 `scenarios/login_scenario.py` 的 `on_start` 中登录，并把 token 存到 `self.token`。  
   每个虚拟用户实例天然隔离，避免跨线程变量传递复杂度。
 
-- **参数化（CSV/JSON）**  
-  通过 `common/data_loader.py` 加载 CSV/JSON，在 `tasks/login_task.py` 按用户循环取参。
+- **参数化（CSV/YAML）**  
+  通过 `common/data_loader.py` 从 `data/` 加载数据，并在 `on_start` 为每个虚拟用户分配独立行。
 
 - **请求语法直观**  
   Locust 基于 requests 风格，直接支持 `headers`、`params`、`json`、`data`。

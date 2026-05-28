@@ -56,6 +56,40 @@ def _require_bool(source: dict[str, Any], key: str) -> bool:
     raise ValueError(f"配置项 `{key}` 必须是布尔值。")
 
 
+def _require_mapping(source: dict[str, Any], key: str) -> dict[str, Any]:
+    value = source.get(key)
+    if not isinstance(value, dict):
+        raise ValueError(f"配置项 `{key}` 必须是 mapping。")
+    return value
+
+
+def _optional_int(source: dict[str, Any], key: str, default: int) -> int:
+    value = source.get(key, default)
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        raise ValueError(f"配置项 `{key}` 必须是整数。")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return default
+        return int(text)
+    raise ValueError(f"配置项 `{key}` 必须是整数。")
+
+
+def _optional_text(source: dict[str, Any], key: str, default: str) -> str:
+    value = source.get(key, default)
+    if value is None:
+        return default
+    if not isinstance(value, str):
+        raise ValueError(f"配置项 `{key}` 必须是字符串。")
+    return value
+
+
 _ROOT_CONFIG = _load_root_config()
 _ENVIRONMENTS = _ROOT_CONFIG.get("environments")
 if not isinstance(_ENVIRONMENTS, dict) or not _ENVIRONMENTS:
@@ -74,3 +108,13 @@ LOCUST_WEB_PORT = _require_int(_CURRENT_ENV_CONFIG, "locust_web_port")
 LOCUST_WEB_RELOAD = _require_bool(_CURRENT_ENV_CONFIG, "locust_web_reload")
 
 DATA_FILE = _require_text(_CURRENT_ENV_CONFIG, "data_file")
+DATA_STRATEGY = _optional_text(_CURRENT_ENV_CONFIG, "data_strategy", "cycle")
+
+_TEST_SHAPE = _require_mapping(_CURRENT_ENV_CONFIG, "test_shape")
+SHAPE_DEFAULT = _optional_text(_TEST_SHAPE, "default_shape", "stage")
+SHAPE_START_USERS = _optional_int(_TEST_SHAPE, "start_users", 10)
+SHAPE_STEP_USERS = _optional_int(_TEST_SHAPE, "step_users", 10)
+SHAPE_STEP_DURATION = _optional_int(_TEST_SHAPE, "step_duration", 30)
+SHAPE_PEAK_USERS = _optional_int(_TEST_SHAPE, "peak_users", 100)
+SHAPE_PEAK_HOLD_TIME = _optional_int(_TEST_SHAPE, "peak_hold_time", 60)
+SHAPE_TOTAL_TIME_LIMIT = _optional_int(_TEST_SHAPE, "total_time_limit", 0)

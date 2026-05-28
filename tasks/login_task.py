@@ -5,10 +5,9 @@ from tasks.login_config import LOGIN_PASSWORD, LOGIN_PATH, LOGIN_USERNAME
 
 
 def build_login_payload(user) -> dict:
-    # JMeter 参数化痛点：这里支持从 CSV/JSON 覆盖默认账号，实现数据驱动。
-    if user.param_rows:
-        row = user.param_rows[user._row_index % len(user.param_rows)]
-        user._row_index += 1
+    # JMeter 参数化痛点：虚拟用户在 on_start 已分配 user_data，这里直接取值即可。
+    row = getattr(user, "user_data", {}) or {}
+    if row:
         return {
             "username": row.get("username", LOGIN_USERNAME),
             "password": row.get("password", LOGIN_PASSWORD),
@@ -40,7 +39,12 @@ def login_task(user):
         name="POST /ecshop/user.php login",
         catch_response=True,
     ) as response:
-        if response.status_code == 200:
+        expected_raw = (getattr(user, "user_data", {}) or {}).get("expected_code", 200)
+        try:
+            expected_code = int(expected_raw)
+        except (TypeError, ValueError):
+            expected_code = 200
+        if response.status_code == expected_code:
             response.success()
         else:
-            response.failure(f"HTTP {response.status_code}")
+            response.failure(f"HTTP {response.status_code}, expected {expected_code}")

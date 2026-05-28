@@ -21,6 +21,30 @@ if str(PROJECT_ROOT) not in sys.path:
 from config import settings
 
 
+def _shape_from_env(default_when_enabled: str, fallback: str) -> str:
+    """
+    兼容两套环境变量：
+    - 新变量: LOCUST_SHAPE=none/stage/stage_hold
+    - 旧变量: LOCUST_ENABLE_SHAPE=0/1
+    """
+    shape = os.getenv("LOCUST_SHAPE")
+    if shape:
+        return shape
+    enable = os.getenv("LOCUST_ENABLE_SHAPE")
+    if enable in {"1", "true", "TRUE", "yes", "on"}:
+        return default_when_enabled
+    return fallback
+
+
+def _env_or_arg(env_name: str, arg_value, fallback):
+    env_value = os.getenv(env_name)
+    if env_value is not None and str(env_value).strip() != "":
+        return env_value
+    if arg_value is not None:
+        return arg_value
+    return fallback
+
+
 def _resolve_locust_cmd() -> str:
     candidates = [
         PROJECT_ROOT / ".venv" / "Scripts" / "locust.exe",
@@ -102,6 +126,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Path to locust file",
     )
 
+    shape_help = (
+        "Shape mode: none(禁用), stage(基础阶梯), stage_hold(阶梯+峰值保持)。"
+        "兼容旧值 0/1。"
+    )
+
     load = subparsers.add_parser("load", parents=[common], help="WebUI debug mode")
     load.add_argument(
         "--web-port",
@@ -111,9 +140,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     load.add_argument(
         "--shape",
-        choices=("0", "1"),
-        default=os.getenv("LOCUST_ENABLE_SHAPE", "0"),
-        help="Enable LoadTestShape via LOCUST_ENABLE_SHAPE",
+        choices=("none", "stage", "stage_hold", "0", "1"),
+        default=_shape_from_env(default_when_enabled="stage", fallback="none"),
+        help=shape_help,
     )
     load.add_argument("--csv-prefix", default="reports/load", help="CSV output prefix")
     load_group = load.add_mutually_exclusive_group()
@@ -141,18 +170,97 @@ def _build_parser() -> argparse.ArgumentParser:
     stress.add_argument("--run-time", default=os.getenv("LOCUST_RUN_TIME", settings.LOCUST_RUN_TIME))
     stress.add_argument(
         "--shape",
-        choices=("0", "1"),
-        default=os.getenv("LOCUST_ENABLE_SHAPE", "1"),
-        help="Enable LoadTestShape via LOCUST_ENABLE_SHAPE",
+        choices=("none", "stage", "stage_hold", "0", "1"),
+        default=_shape_from_env(default_when_enabled=settings.SHAPE_DEFAULT, fallback=settings.SHAPE_DEFAULT),
+        help=shape_help,
     )
     stress.add_argument("--csv-prefix", default="reports/stress", help="CSV output prefix")
+    stress.add_argument(
+        "--start-users",
+        type=int,
+        default=int(os.getenv("LOCUST_SHAPE_START_USERS", str(settings.SHAPE_START_USERS))),
+        help="stage_hold: 起始用户数",
+    )
+    stress.add_argument(
+        "--step-users",
+        type=int,
+        default=int(os.getenv("LOCUST_SHAPE_STEP_USERS", str(settings.SHAPE_STEP_USERS))),
+        help="stage_hold: 每阶梯增加用户数",
+    )
+    stress.add_argument(
+        "--step-duration",
+        type=int,
+        default=int(os.getenv("LOCUST_SHAPE_STEP_DURATION", str(settings.SHAPE_STEP_DURATION))),
+        help="stage_hold: 每阶梯持续秒数",
+    )
+    stress.add_argument(
+        "--peak-users",
+        type=int,
+        default=int(os.getenv("LOCUST_SHAPE_PEAK_USERS", str(settings.SHAPE_PEAK_USERS))),
+        help="stage_hold: 峰值用户数",
+    )
+    stress.add_argument(
+        "--peak-hold-time",
+        type=int,
+        default=int(os.getenv("LOCUST_SHAPE_PEAK_HOLD_TIME", str(settings.SHAPE_PEAK_HOLD_TIME))),
+        help="stage_hold: 峰值保持秒数",
+    )
+    stress.add_argument(
+        "--total-time-limit",
+        type=int,
+        default=int(os.getenv("LOCUST_SHAPE_TOTAL_TIME_LIMIT", str(settings.SHAPE_TOTAL_TIME_LIMIT))),
+        help="stage_hold: 总时长上限，0 表示不设置",
+    )
 
     return parser
 
 
 def _run_locust(args: argparse.Namespace, passthrough: list[str]) -> int:
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    os.environ["LOCUST_ENABLE_SHAPE"] = args.shape
+    raw_shape = str(_env_or_arg("LOCUST_SHAPE", args.shape, settings.SHAPE_DEFAULT)).strip().lower()
+    if raw_shape == "0":
+        shape_enabled = "0"
+        shape_name = "none"
+    elif raw_shape == "1":
+        shape_enabled = "1"
+        shape_name = "stage"
+    elif raw_shape == "none":
+        shape_enabled = "0"
+        shape_name = "none"
+    elif raw_shape in {"stage", "stage_hold"}:
+        shape_enabled = "1"
+        shape_name = raw_shape
+    else:
+        raise ValueError(f"不支持的 shape: {args.shape}")
+
+    os.environ["LOCUST_ENABLE_SHAPE"] = shape_enabled
+    os.environ["LOCUST_SHAPE"] = shape_name
+    os.environ["LOCUST_SHAPE_START_USERS"] = str(
+        _env_or_arg("LOCUST_SHAPE_START_USERS", getattr(args, "start_users", None), settings.SHAPE_START_USERS)
+    )
+    os.environ["LOCUST_SHAPE_STEP_USERS"] = str(
+        _env_or_arg("LOCUST_SHAPE_STEP_USERS", getattr(args, "step_users", None), settings.SHAPE_STEP_USERS)
+    )
+    os.environ["LOCUST_SHAPE_STEP_DURATION"] = str(
+        _env_or_arg("LOCUST_SHAPE_STEP_DURATION", getattr(args, "step_duration", None), settings.SHAPE_STEP_DURATION)
+    )
+    os.environ["LOCUST_SHAPE_PEAK_USERS"] = str(
+        _env_or_arg("LOCUST_SHAPE_PEAK_USERS", getattr(args, "peak_users", None), settings.SHAPE_PEAK_USERS)
+    )
+    os.environ["LOCUST_SHAPE_PEAK_HOLD_TIME"] = str(
+        _env_or_arg(
+            "LOCUST_SHAPE_PEAK_HOLD_TIME",
+            getattr(args, "peak_hold_time", None),
+            settings.SHAPE_PEAK_HOLD_TIME,
+        )
+    )
+    os.environ["LOCUST_SHAPE_TOTAL_TIME_LIMIT"] = str(
+        _env_or_arg(
+            "LOCUST_SHAPE_TOTAL_TIME_LIMIT",
+            getattr(args, "total_time_limit", None),
+            settings.SHAPE_TOTAL_TIME_LIMIT,
+        )
+    )
 
     cmd = [
         _resolve_locust_cmd(),
@@ -173,6 +281,8 @@ def _run_locust(args: argparse.Namespace, passthrough: list[str]) -> int:
             return 1
         cmd.extend(["--web-port", str(args.web_port)])
         print(f"WebUI URL: http://localhost:{args.web_port}")
+        if shape_enabled == "1":
+            print(f"当前 shape: {shape_name}（WebUI 并发输入框会由 Locust 自动禁用）")
     else:
         cmd.extend(
             [
@@ -185,6 +295,8 @@ def _run_locust(args: argparse.Namespace, passthrough: list[str]) -> int:
                 args.run_time,
             ]
         )
+        if shape_enabled == "1":
+            print(f"当前 shape: {shape_name}")
 
     cmd.extend(passthrough)
     print("执行命令:", " ".join(cmd))
