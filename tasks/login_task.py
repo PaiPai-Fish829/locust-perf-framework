@@ -1,50 +1,47 @@
-from locust import task
+from __future__ import annotations
 
-from config import settings
-from tasks.login_config import LOGIN_PASSWORD, LOGIN_PATH, LOGIN_USERNAME
+from typing import Any, Mapping, TypedDict
+
+from utils.api_assert import assert_http_response
+from utils.api_payload import build_payload
+
+PATH = "/ecshop/user.php"
+REQUEST_NAME = "POST /ecshop/user.php login"
+
+HEADERS = {"Content-Type": "application/x-www-form-urlencoded"}
+
+class LoginPayload(TypedDict):
+    username: str
+    password: str
+    act: str
+    back_act: str
+    submit: str
+
+DEFAULT_PAYLOAD: LoginPayload = {
+    "username": "test",
+    "password": "123456",
+    "act": "act_login",
+    "back_act": "./index.php",
+    "submit": "1",
+}
+
+def build_request_headers(extra: Mapping[str, str] | None = None) -> dict[str, str]:
+    headers = dict(HEADERS)
+    if extra:
+        headers.update(dict(extra))
+    return headers
 
 
-def build_login_payload(user) -> dict:
-    # JMeter 参数化痛点：虚拟用户在 on_start 已分配 user_data，这里直接取值即可。
-    row = getattr(user, "user_data", {}) or {}
-    if row:
-        return {
-            "username": row.get("username", LOGIN_USERNAME),
-            "password": row.get("password", LOGIN_PASSWORD),
-            "act": row.get("act", "act_login"),
-            "back_act": row.get("back_act", "./index.php"),
-            "submit": row.get("submit", "1"),
-        }
-    return {
-        "username": LOGIN_USERNAME,
-        "password": LOGIN_PASSWORD,
-        "act": "act_login",
-        "back_act": "./index.php",
-        "submit": "1",
-    }
-
-
-@task
-def login_task(user):
-    headers = {"Content-Type": "application/x-www-form-urlencoded"}
-    payload = build_login_payload(user)
-    if user.token:
-        headers["Authorization"] = f"Bearer {user.token}"
-
-    # 请求写法与 requests 一致：headers、params、json/data 均可直接传。
-    with user.client.post(
-        LOGIN_PATH,
-        data=payload,
-        headers=headers,
-        name="POST /ecshop/user.php login",
+def login_task(
+    client,
+    data: dict | None = None,
+    expvalue: Mapping[str, Any] | None = None,
+) -> None:
+    with client.post(
+        PATH,
+        data=build_payload(DEFAULT_PAYLOAD, data),
+        headers=build_request_headers(),
+        name=REQUEST_NAME,
         catch_response=True,
     ) as response:
-        expected_raw = (getattr(user, "user_data", {}) or {}).get("expected_code", 200)
-        try:
-            expected_code = int(expected_raw)
-        except (TypeError, ValueError):
-            expected_code = 200
-        if response.status_code == expected_code:
-            response.success()
-        else:
-            response.failure(f"HTTP {response.status_code}, expected {expected_code}")
+        assert_http_response(response, expvalue, REQUEST_NAME)

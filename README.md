@@ -22,15 +22,21 @@ pip install -r requirements.txt
 ```text
 locust-perf-framework/
 ├── tasks/                         # 原子任务层：单接口请求定义（可复用）
-│   ├── login_task.py
-│   ├── login_config.py            # 登录接口级配置（路径、默认账号等）
+│   ├── login_task.py              # POST 登录
+│   ├── index_task.py              # GET 首页
+│   ├── user_home_task.py          # GET 用户中心
+│   ├── cart_task.py               # GET 购物车
 │   └── __init__.py
 ├── scenarios/                     # 场景层：组织业务流程（登录、流程编排等）
 │   ├── login_scenario.py
 │   └── __init__.py
-├── common/                        # 公共能力：认证、参数化加载、断言、日志、指标导出
-│   ├── auth.py
+├── utils/                         # 框架工具：参数化、形状策略、数据加载
+│   ├── parametrize.py             # 场景层 data/expvalue（scenarios 专用）
 │   ├── data_loader.py
+│   └── configurable_shape.py
+├── common/                        # 公共能力：认证、断言、日志、指标导出
+│   ├── user_session.py          # 会话：auto 登录 / manual token
+│   ├── auth.py                  # 兼容旧 login()，内部转 UserSession
 │   ├── assertions.py
 │   ├── logger.py
 │   ├── metrics.py                 # 暴露 /metrics，供 Prometheus 抓取
@@ -115,15 +121,55 @@ python scripts/run.py stress --stop-timeout 30 --only-summary
 python scripts/run.py load --no-reload
 ```
 
-### 3.4 数据参数化准备（CSV/YAML）
+### 3.4 数据参数化（`utils/parametrize`，场景层负责）
 
-默认示例数据位于 `data/users.csv`，字段：
+**职责划分**：
 
-- `username`
-- `password`
-- `expected_code`
+| 目录 | 职责 |
+|------|------|
+| `utils/parametrize.py` | 读 CSV/YAML → `{data, expvalue}`，在 **scenario** 绑定 |
+| `utils/api_assert.py` | 接口层 ``assert`` 断言，失败抛 ``ApiAssertionError`` |
+| `scenarios/*.py` | `@scenario_cases` + `@task`：编排调用，传入 `data` / `expvalue` |
+| `tasks/*_task.py` | 路径、统计名、请求头、负载结构、**接口内 assert 断言** |
 
-运行时会在 `on_start` 为每个虚拟用户分配一条独立数据（支持 `cycle` / `random`）。
+每条用例：`{"data": {...}, "expvalue": {...}}` → 绑定到 `self.data` / `self.expvalue`。
+
+**YAML**（`data/users.yaml`）与 **CSV**（`data.username,expvalue.status_code,...`）格式见 `data/` 示例。
+
+**场景示例**（`scenarios/login_scenario.py`）：
+
+```python
+@scenario_cases(settings.DATA_FILE, strategy=settings.DATA_STRATEGY)
+def on_start(self):
+    self.session = UserSession.from_parametrize_data(self.client, self.data)
+    if self.session.is_manual:
+        self.session.apply_manual_token(self.data.get("token"))
+    else:
+        self.session.login_once(self.data, self.expvalue)
+
+@task
+def browse_index(self):
+    index_task(self.client, self.session, self.data, self.expvalue)
+```
+
+**任务**：每个 `tasks/*_task.py` 内含断言；scenario 只编排调用。
+
+**手动 token**：CSV/YAML 的 `data.token` 或环境变量 `LOCUST_MANUAL_TOKEN`；`data.auth_mode=manual` 强制手动模式。
+
+**接口契约**（每个接口一个 `tasks/*_task.py`，契约与任务同文件）：
+
+```python
+# tasks/foo_task.py
+class FooPayload(TypedDict):
+    field_a: str
+
+DEFAULT_PAYLOAD: FooPayload = {"field_a": "default"}
+
+def foo_task(client, data=None):
+    client.post(PATH, json=build_payload(DEFAULT_PAYLOAD, data), ...)
+```
+
+合并逻辑见 `utils/api_payload.build_payload`；`strict=True` 可拒绝未在 DEFAULT 中声明的字段。
 
 ## 4. 启动监控栈
 
@@ -161,7 +207,7 @@ Grafana 预置了 `Locust Overview` 面板：
 ## 6. 配置外置（根目录配置文件 + 环境管理）
 
 项目配置统一存放在根目录 `locust-config.yaml`，`config/settings.py` 只负责读取与分发。
-登录场景的接口路径与默认账号属于接口级配置，放在 `tasks/login_config.py`，不再放入全局环境配置。
+登录场景的接口路径与默认负载定义在 `tasks/login_task.py`（`DEFAULT_PAYLOAD`），不再放入全局环境配置。
 高级压测策略参数统一放在环境配置下的 `test_shape` 段。
 
 支持环境切换：
@@ -216,11 +262,11 @@ python scripts/run.py stress --shape stage_hold
 ## 9. JMeter 痛点对应方案
 
 - **跨线程传递 Token/Cookie**  
-  在 `scenarios/login_scenario.py` 的 `on_start` 中登录，并把 token 存到 `self.token`。  
+  在 `scenarios/login_scenario.py` 的 `on_start` 经 `UserSession` 登录一次，业务 `@task` 复用 `self.session`。  
   每个虚拟用户实例天然隔离，避免跨线程变量传递复杂度。
 
 - **参数化（CSV/YAML）**  
-  通过 `common/data_loader.py` 从 `data/` 加载数据，并在 `on_start` 为每个虚拟用户分配独立行。
+  通过 `utils/parametrize` 在 scenario 的 `on_start` 从 `data/` 加载并绑定 `self.data` / `self.expvalue`。
 
 - **请求语法直观**  
   Locust 基于 requests 风格，直接支持 `headers`、`params`、`json`、`data`。

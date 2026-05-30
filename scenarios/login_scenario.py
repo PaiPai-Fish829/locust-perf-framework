@@ -1,31 +1,60 @@
-from locust import HttpUser, between
+"""
+登录 + 业务流程场景。
 
-from common import metrics  # noqa: F401  # side-effect: 注册 /metrics 路由
-from common.auth import login
-from common.data_loader import assign_user_row
+- on_start：参数化、会话初始化（登录仅一次）
+- @task：编排接口调用；断言在各 ``tasks/*_task.py`` 内完成
+"""
+
+from __future__ import annotations
+
+from typing import Any, Callable
+
+from locust import HttpUser, between, task
+
+from common import metrics  # noqa: F401
+from common.user_session import UserSession
 from config import settings
-from tasks.login_task import login_task
+from utils.parametrize import scenario_cases
+from tasks.add_location import add_location_task
+
+TaskRunner = Callable[..., None]
 
 
 class LoginScenario(HttpUser):
     host = settings.LOCUST_HOST
     wait_time = between(1, 2)
-    tasks = [login_task]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.token = ""
-        self.user_data = {}
+        self.session = UserSession(self.client)
+        self.case = {"data": {}, "expvalue": {}}
+        self.data: dict[str, Any] = {}
+        self.expvalue: dict[str, Any] = {}
 
+    @scenario_cases(settings.DATA_FILE, strategy=settings.DATA_STRATEGY)
     def on_start(self):
-        # JMeter 痛点规避：登录后把 token 存在用户实例变量 self.token，
-        # 后续请求天然可复用，无需跨线程共享变量。
-        auth_info = login(self.client)
-        self.token = auth_info.get("token", "")
-        # 每个虚拟用户在 on_start 分配一条稳定数据，避免每次 task 都重新读文件。
-        if settings.DATA_FILE:
-            self.user_data = assign_user_row(
-                self,
-                file_name=settings.DATA_FILE,
-                strategy=settings.DATA_STRATEGY,
-            )
+        self.session = UserSession.from_parametrize_data(self.client, self.data)
+
+        if self.session.is_manual:
+            self.session.apply_manual_token(self.data.get("token"))
+            return
+
+        self.session.login_once(self.data, self.expvalue)
+
+    def _run_task(
+        self,
+        task_fn: TaskRunner,
+        *,
+        data: dict | None = None,
+        expvalue: dict | None = None,
+    ) -> None:
+        task_fn(
+            self.client,
+            self.session,
+            data if data is not None else self.data,
+            expvalue if expvalue is not None else self.expvalue,
+        )
+
+    @task(1)
+    def add_location(self):
+        self._run_task(add_location_task)

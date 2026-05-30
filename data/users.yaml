@@ -1,0 +1,19 @@
+# 标准两层：data（请求数据） + expvalue（响应预期）
+- data:
+    username: test
+    password: "123456"
+  expvalue:
+    status_code: 200
+    contains: "登录成功"
+- data:
+    username: test2
+    password: "123456"
+  expvalue:
+    status_code: 200
+    contains: "登录成功"
+- data:
+    username: test3
+    password: "123456"
+  expvalue:
+    status_code: 200
+    contains: "登录成功"
