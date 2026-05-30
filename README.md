@@ -28,10 +28,11 @@ locust-perf-framework/
 │   ├── cart_task.py               # GET 购物车
 │   └── __init__.py
 ├── scenarios/                     # 场景层：组织业务流程（登录、流程编排等）
+│   ├── add_location_flow.py
 │   ├── login_scenario.py
 │   └── __init__.py
 ├── utils/                         # 框架工具：参数化、形状策略、数据加载
-│   ├── parametrize.py             # 场景层 data/expvalue（scenarios 专用）
+│   ├── parametrize.py             # 场景层 data 参数化（scenarios 专用）
 │   ├── data_loader.py
 │   └── configurable_shape.py
 ├── common/                        # 公共能力：认证、断言、日志、指标导出
@@ -127,28 +128,19 @@ python scripts/run.py load --no-reload
 
 | 目录 | 职责 |
 |------|------|
-| `utils/parametrize.py` | 读 CSV/YAML → `{data, expvalue}`，在 **scenario** 绑定 |
-| `tasks/*_task.py` | 接口内 ``assert status_code`` / ``assert text in response.text`` |
-| `scenarios/*.py` | `@scenario_cases` + `@task`：编排调用，传入 `data` / `expvalue` |
+| `utils/parametrize.py` | 读 CSV/YAML → `self.data`，在 **scenario** 绑定 |
+| `tasks/*_task.py` | 接口内硬编码断言（`response.failure` / `success`） |
+| `scenarios/*.py` | 类上 `default_data_file` + `@scenario_cases` + `@task` |
 | `tasks/*_task.py` | 路径、统计名、请求头、负载结构、**接口内 assert 断言** |
 
-每条用例：`{"data": {...}, "expvalue": {...}}` → 绑定到 `self.data` / `self.expvalue`。
+每条用例 YAML 为 `data: { username, password }`；CSV 为 `data.username,data.password` 列。绑定到 `self.data`。
 
-**YAML**（`data/users.yaml`）与 **CSV**（`data.username,expvalue.status_code,...`）格式见 `data/` 示例。
+**YAML** / **CSV** 示例见 `data/` 目录。
 
-**场景示例**（`scenarios/login_scenario.py`）：
+**场景示例**（`scenarios/add_location_flow.py` / `scenarios/login_scenario.py`）：
 
-```python
-class LoginScenario(HttpUser):
-    parametrized = True
-    default_data_file = "users.yaml"
-    data_strategy = settings.DATA_STRATEGY
-
-    @scenario_cases()
-    def on_start(self):
-        self.session = UserSession.from_parametrize_data(self.client, self.data)
-        ...
-```
+- `AddLocationFlowScenario`：`on_start` 登录 + `@task` 添加收货地址
+- `LoginScenario`：仅 `@task` 反复压测登录接口
 
 每个可参数化场景在类上声明 `default_data_file`；管理平台启动时可经 `scenario_data` 按场景覆盖数据文件与 `cycle`/`random` 策略。全局 `locust-config.yaml` 的 `data_file` 仅作未声明场景时的兜底。
 
@@ -262,11 +254,11 @@ python scripts/run.py stress --shape stage_hold
 ## 9. JMeter 痛点对应方案
 
 - **跨线程传递 Token/Cookie**  
-  在 `scenarios/login_scenario.py` 的 `on_start` 经 `UserSession` 登录一次，业务 `@task` 复用 `self.session`。  
+  在 `scenarios/add_location_flow.py` 的 `on_start` 经 `UserSession` 登录一次，业务 `@task` 复用 `self.session`。  
   每个虚拟用户实例天然隔离，避免跨线程变量传递复杂度。
 
 - **参数化（CSV/YAML）**  
-  通过 `utils/parametrize` 在 scenario 的 `on_start` 从 `data/` 加载并绑定 `self.data` / `self.expvalue`。
+  通过 `utils/parametrize` 在 scenario 的 `on_start` 从 `data/` 加载并绑定 `self.data`。
 
 - **请求语法直观**  
   Locust 基于 requests 风格，直接支持 `headers`、`params`、`json`、`data`。

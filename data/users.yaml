@@ -1,35 +1,12 @@
-# data：请求参数  |  expvalue.contains：断言规则列表（仅用于 on_start 登录）
-#
-# 规则写法（二选一）：
-#   - [in, "某段文字"]              → assert "某段文字" in response.text
-#   - [not in, "非法入口"]
-#   - [status_code, ==, 200]      → assert response.status_code == 200
-#
 - data:
     username: test
     password: "123456"
-  expvalue:
-    contains:
-      - [status_code, ==, 200]
-      - [in, "登录成功"]
 - data:
     username: test2
     password: "123456"
-  expvalue:
-    contains:
-      - [status_code, ==, 200]
-      - [in, "登录成功"]
 - data:
     username: test3
     password: "123456"
-  expvalue:
-    contains:
-      - [status_code, ==, 200]
-      - [in, "登录成功"]
 - data:
     username: wrong_username
     password: "123456"
-  expvalue:
-    contains:
-      - [status_code, ==, 200]
-      - [in, "登录成功"]

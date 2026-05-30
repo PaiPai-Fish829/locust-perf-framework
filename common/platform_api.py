@@ -14,7 +14,7 @@ from locust import events
 from config import settings as app_settings
 from utils.configurable_shape import ConfigurableShape
 from utils.data_loader import DATA_DIR
-from utils.scenario_data import set_runtime_overrides
+from utils.parametrize import set_runtime_overrides
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCENARIOS_DIR = PROJECT_ROOT / "scenarios"

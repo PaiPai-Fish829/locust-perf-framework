@@ -110,9 +110,9 @@ cp .env.example .env
 {
   "scenarios": [
     {
-      "id": "login_scenario",
-      "filename": "login_scenario.py",
-      "class_name": "LoginScenario",
+      "id": "add_location_flow",
+      "filename": "add_location_flow.py",
+      "class_name": "AddLocationFlowScenario",
       "description": "...",
       "parametrized": true,
       "default_data_file": "users.yaml",

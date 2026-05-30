@@ -3,11 +3,12 @@ import os
 from pathlib import Path
 from locust import LoadTestShape
 
+from scenarios.add_location_flow import AddLocationFlowScenario
 from scenarios.login_scenario import LoginScenario
 
 from common import metrics, platform_api  # noqa: F401  # side-effect: /metrics、/platform/*
 
-__all__ = ["LoginScenario"]
+__all__ = ["AddLocationFlowScenario", "LoginScenario"]
 
 # 注册 shapes/ 下所有非 abstract 的 LoadTestShape，供管理平台选择并通过 shape_class 启动。
 # 必须写入 locustfile 模块 globals，Locust 才会纳入 available_shape_classes。

@@ -44,6 +44,12 @@ function round(val: number | null | undefined, digits = 0): string {
   return digits > 0 ? val.toFixed(digits) : String(Math.round(val))
 }
 
+/** 聚合行失败率：始终来自 Locust 累计统计，不受图表/KPI 清空影响 */
+function aggregatedFailRatio(entry: LocustStatEntry): number {
+  if (entry.num_requests <= 0) return 0
+  return entry.num_failures / entry.num_requests
+}
+
 interface ApiStatRow {
   key: string
   type: string
@@ -420,7 +426,7 @@ export default function DashboardView({ stats, visible = true }: DashboardViewPr
           <h3 className="section-title">实时图表</h3>
           <Popconfirm
             title="确认清空全部图表数据？"
-            description="清除折线历史、当前 RPS、失败率等实时 KPI；不影响 Locust 服务端累计统计与下方表格。"
+            description="仅清除上方 KPI 卡片与折线图历史；聚合报告、API 统计表仍显示 Locust 服务端累计数据。"
             onConfirm={handleClearCharts}
             okText="清空"
             cancelText="取消"
@@ -525,7 +531,9 @@ export default function DashboardView({ stats, visible = true }: DashboardViewPr
             </div>
             <div className="aggregated-report-row">
               <span className="aggregated-label">失败率</span>
-              <span className="aggregated-value">{(failRatio * 100).toFixed(2)}%</span>
+              <span className="aggregated-value">
+                {(aggregatedFailRatio(total) * 100).toFixed(2)}%
+              </span>
             </div>
             <div className="aggregated-report-row">
               <span className="aggregated-label">平均响应</span>
@@ -543,15 +551,11 @@ export default function DashboardView({ stats, visible = true }: DashboardViewPr
             </div>
             <div className="aggregated-report-row">
               <span className="aggregated-label">当前 RPS</span>
-              <span className="aggregated-value">
-                {round(kpi.isLiveIdle ? 0 : total.current_rps, 1)}
-              </span>
+              <span className="aggregated-value">{round(total.current_rps, 1)}</span>
             </div>
             <div className="aggregated-report-row">
               <span className="aggregated-label">总 RPS</span>
-              <span className="aggregated-value">
-                {round(kpi.isLiveIdle ? 0 : total.total_rps, 1)}
-              </span>
+              <span className="aggregated-value">{round(total.total_rps, 1)}</span>
             </div>
           </div>
         </div>
