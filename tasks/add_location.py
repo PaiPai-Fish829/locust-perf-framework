@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Mapping, TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
-from utils.api_assert import assert_http_response
 from utils.api_payload import build_payload
 
 if TYPE_CHECKING:
@@ -54,7 +53,6 @@ DEFAULT_PAYLOAD: AddLocationPayload = {
 
 
 def build_request_headers(session: UserSession) -> dict[str, str]:
-    """登录后接口：携带 PHP 会话头（与 ecshop 约定一致）。"""
     headers = dict(HEADERS)
     session_id = session.php_session_id()
     if session_id:
@@ -62,12 +60,7 @@ def build_request_headers(session: UserSession) -> dict[str, str]:
     return headers
 
 
-def add_location_task(
-    client,
-    session: UserSession,
-    data: dict | None = None,
-    expvalue: Mapping[str, Any] | None = None,
-) -> None:
+def add_location_task(client, session: UserSession, data: dict | None = None) -> bool:
     with client.post(
         PATH,
         data=build_payload(DEFAULT_PAYLOAD, data),
@@ -75,4 +68,8 @@ def add_location_task(
         name=REQUEST_NAME,
         catch_response=True,
     ) as response:
-        assert_http_response(response, expvalue, REQUEST_NAME)
+        if "收货地址信息已成功更新" not in response.text:
+            response.failure("正文不含「收货地址信息已成功更新」")
+            return False
+        response.success()
+        return True

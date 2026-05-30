@@ -128,7 +128,7 @@ python scripts/run.py load --no-reload
 | 目录 | 职责 |
 |------|------|
 | `utils/parametrize.py` | 读 CSV/YAML → `{data, expvalue}`，在 **scenario** 绑定 |
-| `utils/api_assert.py` | 接口层 ``assert`` 断言，失败抛 ``ApiAssertionError`` |
+| `tasks/*_task.py` | 接口内 ``assert status_code`` / ``assert text in response.text`` |
 | `scenarios/*.py` | `@scenario_cases` + `@task`：编排调用，传入 `data` / `expvalue` |
 | `tasks/*_task.py` | 路径、统计名、请求头、负载结构、**接口内 assert 断言** |
 
@@ -139,18 +139,18 @@ python scripts/run.py load --no-reload
 **场景示例**（`scenarios/login_scenario.py`）：
 
 ```python
-@scenario_cases(settings.DATA_FILE, strategy=settings.DATA_STRATEGY)
-def on_start(self):
-    self.session = UserSession.from_parametrize_data(self.client, self.data)
-    if self.session.is_manual:
-        self.session.apply_manual_token(self.data.get("token"))
-    else:
-        self.session.login_once(self.data, self.expvalue)
+class LoginScenario(HttpUser):
+    parametrized = True
+    default_data_file = "users.yaml"
+    data_strategy = settings.DATA_STRATEGY
 
-@task
-def browse_index(self):
-    index_task(self.client, self.session, self.data, self.expvalue)
+    @scenario_cases()
+    def on_start(self):
+        self.session = UserSession.from_parametrize_data(self.client, self.data)
+        ...
 ```
+
+每个可参数化场景在类上声明 `default_data_file`；管理平台启动时可经 `scenario_data` 按场景覆盖数据文件与 `cycle`/`random` 策略。全局 `locust-config.yaml` 的 `data_file` 仅作未声明场景时的兜底。
 
 **任务**：每个 `tasks/*_task.py` 内含断言；scenario 只编排调用。
 

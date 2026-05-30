@@ -96,7 +96,8 @@ cp .env.example .env
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/platform/scenarios` | 扫描 `scenarios/` 下 HttpUser 子类 |
+| GET | `/platform/scenarios` | 扫描 `scenarios/` 下 HttpUser 子类（含是否参数化、默认数据文件） |
+| GET | `/platform/data-files` | 列出 `data/` 下可用 `.csv` / `.yaml` / `.yml` |
 | GET | `/platform/shapes` | 扫描 `shapes/` 下 LoadTestShape（含 `param_schema`） |
 | GET | `/platform/stats/history` | 返回 `runner.stats.history`（服务端 5s 采样历史） |
 | POST | `/platform/swarm` | 启动压测（`application/json` 或 form） |
@@ -112,11 +113,18 @@ cp .env.example .env
       "id": "login_scenario",
       "filename": "login_scenario.py",
       "class_name": "LoginScenario",
-      "description": "..."
+      "description": "...",
+      "parametrized": true,
+      "default_data_file": "users.yaml",
+      "data_strategy": "cycle"
     }
   ]
 }
 ```
+
+### GET `/platform/data-files`
+
+响应：`{ "data_files": [ { "name": "users.yaml", "filename": "users.yaml" } ] }`
 
 ### GET `/platform/shapes`
 
@@ -147,6 +155,9 @@ cp .env.example .env
   "shape_class": "StageShape",
   "shape_params": { "start_users": 10, "step_users": 10 },
   "user_classes": ["LoginScenario"],
+  "scenario_data": {
+    "LoginScenario": { "data_file": "users.csv", "data_strategy": "cycle" }
+  },
   "host": "http://192.168.1.1:80",
   "run_time": "5m",
   "user_count": 100,
@@ -156,6 +167,7 @@ cp .env.example .env
 
 说明：
 
+- `scenario_data`：按场景类名覆盖参数化文件与分配策略（仅对带 `@scenario_cases` 的场景生效）。
 - 指定 `shape_class` 时由 Shape 控制并发，通常不传 `user_count` / `spawn_rate`。
 - 未指定 Shape 时需传 `user_count`、`spawn_rate`。
 - `shape_params` 在启动前应用到 `ConfigurableShape.apply_params()`。

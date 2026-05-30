@@ -11,11 +11,15 @@ from typing import Any
 from flask import jsonify, request
 from locust import events
 
+from config import settings as app_settings
 from utils.configurable_shape import ConfigurableShape
+from utils.data_loader import DATA_DIR
+from utils.scenario_data import set_runtime_overrides
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCENARIOS_DIR = PROJECT_ROOT / "scenarios"
 SHAPES_DIR = PROJECT_ROOT / "shapes"
+DATA_STRATEGIES = ("cycle", "random")
 
 
 def _base_names(node: ast.ClassDef) -> set[str]:
@@ -28,6 +32,78 @@ def _base_names(node: ast.ClassDef) -> set[str]:
     return names
 
 
+def _ast_constant_str(node: ast.AST | None) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _is_scenario_cases_decorator(dec: ast.expr) -> bool:
+    if isinstance(dec, ast.Name) and dec.id == "scenario_cases":
+        return True
+    if isinstance(dec, ast.Call):
+        func = dec.func
+        if isinstance(func, ast.Name) and func.id == "scenario_cases":
+            return True
+        if isinstance(func, ast.Attribute) and func.attr == "scenario_cases":
+            return True
+    return False
+
+
+def _parse_scenario_cases_decorator(
+    dec: ast.expr,
+) -> tuple[bool, str | None, str | None]:
+    if isinstance(dec, ast.Name) and dec.id == "scenario_cases":
+        return True, None, None
+    if not isinstance(dec, ast.Call) or not _is_scenario_cases_decorator(dec):
+        return False, None, None
+    file_arg = _ast_constant_str(dec.args[0]) if dec.args else None
+    strategy: str | None = None
+    for kw in dec.keywords:
+        if kw.arg == "strategy":
+            strategy = _ast_constant_str(kw.value)
+    return True, file_arg, strategy
+
+
+def _class_parametrize_meta(node: ast.ClassDef) -> dict[str, Any]:
+    parametrized = False
+    default_data_file = ""
+    data_strategy = ""
+
+    for stmt in node.body:
+        if isinstance(stmt, ast.Assign):
+            for target in stmt.targets:
+                if not isinstance(target, ast.Name):
+                    continue
+                if target.id == "parametrized" and isinstance(stmt.value, ast.Constant):
+                    parametrized = bool(stmt.value.value)
+                elif target.id == "default_data_file":
+                    default_data_file = _ast_constant_str(stmt.value) or default_data_file
+                elif target.id == "data_strategy":
+                    data_strategy = _ast_constant_str(stmt.value) or data_strategy
+        elif isinstance(stmt, ast.FunctionDef):
+            for dec in stmt.decorator_list:
+                has_cases, file_arg, strat = _parse_scenario_cases_decorator(dec)
+                if has_cases:
+                    parametrized = True
+                    if file_arg:
+                        default_data_file = file_arg
+                    if strat:
+                        data_strategy = strat
+
+    if parametrized:
+        if not default_data_file:
+            default_data_file = app_settings.DATA_FILE
+        if not data_strategy:
+            data_strategy = app_settings.DATA_STRATEGY
+
+    return {
+        "parametrized": parametrized,
+        "default_data_file": default_data_file,
+        "data_strategy": data_strategy,
+    }
+
+
 def _parse_scenario_module(path: Path) -> list[dict]:
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(path))
@@ -37,10 +113,12 @@ def _parse_scenario_module(path: Path) -> list[dict]:
             continue
         if "HttpUser" not in _base_names(node):
             continue
+        meta = _class_parametrize_meta(node)
         results.append(
             {
                 "class_name": node.name,
                 "description": (ast.get_docstring(node) or "").strip(),
+                **meta,
             }
         )
     return results
@@ -63,9 +141,42 @@ def list_scenario_files() -> list[dict]:
                 "filename": path.name,
                 "class_name": primary["class_name"],
                 "description": primary["description"],
+                "parametrized": primary.get("parametrized", False),
+                "default_data_file": primary.get("default_data_file", ""),
+                "data_strategy": primary.get("data_strategy", ""),
             }
         )
     return items
+
+
+def list_data_files() -> list[dict]:
+    items: list[dict] = []
+    if not DATA_DIR.is_dir():
+        return items
+    for path in sorted(DATA_DIR.iterdir()):
+        if path.suffix.lower() not in {".csv", ".yaml", ".yml"}:
+            continue
+        items.append({"name": path.name, "filename": path.name})
+    return items
+
+
+def _parse_scenario_data_overrides(raw: Any) -> dict[str, dict[str, str]]:
+    if not isinstance(raw, dict):
+        return {}
+    result: dict[str, dict[str, str]] = {}
+    for class_name, cfg in raw.items():
+        if not isinstance(cfg, dict):
+            continue
+        entry: dict[str, str] = {}
+        data_file = cfg.get("data_file")
+        if isinstance(data_file, str) and data_file.strip():
+            entry["data_file"] = data_file.strip()
+        strategy = cfg.get("data_strategy")
+        if isinstance(strategy, str) and strategy.strip() in DATA_STRATEGIES:
+            entry["data_strategy"] = strategy.strip()
+        if entry:
+            result[str(class_name)] = entry
+    return result
 
 
 def _iter_shape_classes() -> list[tuple[str, type[ConfigurableShape]]]:
@@ -131,6 +242,8 @@ def _run_platform_swarm(environment, web_ui, payload: dict[str, Any]):
 
     logger = greenlet_exception_logger(__import__("logging").getLogger("locust.web"))
     host = environment.host
+
+    set_runtime_overrides(_parse_scenario_data_overrides(payload.get("scenario_data")))
 
     environment._pending_shape_params = _parse_shape_params(payload.get("shape_params"))
 
@@ -247,6 +360,10 @@ def on_locust_init(environment, **kwargs):
     @environment.web_ui.app.route("/platform/scenarios")
     def platform_scenarios():
         return jsonify({"scenarios": list_scenario_files()})
+
+    @environment.web_ui.app.route("/platform/data-files")
+    def platform_data_files():
+        return jsonify({"data_files": list_data_files()})
 
     @environment.web_ui.app.route("/platform/shapes")
     def platform_shapes():

@@ -6,14 +6,18 @@ import {
   Empty,
   Input,
   InputNumber,
+  Select,
   Spin,
   Typography,
   message,
 } from 'antd'
 import {
+  fetchDataFiles,
   fetchScenarios,
   fetchShapes,
   startPlatformSwarm,
+  type DataFileMeta,
+  type ScenarioDataOverride,
   type ScenarioMeta,
   type ShapeMeta,
 } from '../api/platform'
@@ -27,7 +31,11 @@ function buildDefaultShapeParams(shape: ShapeMeta | null): Record<string, number
 
 export default function TestTaskPanel() {
   const [scenarios, setScenarios] = useState<ScenarioMeta[]>([])
+  const [dataFiles, setDataFiles] = useState<DataFileMeta[]>([])
   const [shapes, setShapes] = useState<ShapeMeta[]>([])
+  const [scenarioDataOverrides, setScenarioDataOverrides] = useState<
+    Record<string, ScenarioDataOverride>
+  >({})
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -47,11 +55,22 @@ export default function TestTaskPanel() {
     setLoading(true)
     setLoadError(null)
 
-    Promise.all([fetchScenarios(), fetchShapes()])
-      .then(([scenarioRes, shapeRes]) => {
+    Promise.all([fetchScenarios(), fetchShapes(), fetchDataFiles()])
+      .then(([scenarioRes, shapeRes, dataFileRes]) => {
         if (cancelled) return
         setScenarios(scenarioRes.scenarios)
+        setDataFiles(dataFileRes.data_files)
         setShapes(shapeRes.shapes)
+        const initialOverrides: Record<string, ScenarioDataOverride> = {}
+        for (const s of scenarioRes.scenarios) {
+          if (s.parametrized && s.default_data_file) {
+            initialOverrides[s.class_name] = {
+              data_file: s.default_data_file,
+              data_strategy: s.data_strategy || 'cycle',
+            }
+          }
+        }
+        setScenarioDataOverrides(initialOverrides)
         if (scenarioRes.scenarios.length > 0) {
           setSelectedClassNames([scenarioRes.scenarios[0].class_name])
         }
@@ -100,11 +119,27 @@ export default function TestTaskPanel() {
           .map((p) => `${p.label} ${shapeParamValues[p.name] ?? p.default}${p.unit}`)
           .join(', ')
       : `用户数 ${userCount}, 孵化率 ${spawnRate}/秒`
+    const dataDesc = selected
+      .filter((s) => s.parametrized)
+      .map((s) => {
+        const file = scenarioDataOverrides[s.class_name]?.data_file || s.default_data_file
+        return `${s.class_name}→${file || '默认'}`
+      })
+      .join('；')
+
     return [
       {
         label: '场景',
         value: selected.map((s) => s.class_name).join('、') || '未选择',
       },
+      ...(dataDesc
+        ? [
+            {
+              label: '数据文件',
+              value: dataDesc,
+            },
+          ]
+        : []),
       {
         label: '策略',
         value: activeShape ? `${activeShape.class_name} (${paramDesc})` : '默认（手动并发）',
@@ -117,6 +152,7 @@ export default function TestTaskPanel() {
   }, [
     scenarios,
     selectedClassNames,
+    scenarioDataOverrides,
     activeShape,
     shapeParamValues,
     userCount,
@@ -132,6 +168,26 @@ export default function TestTaskPanel() {
     })
   }
 
+  const updateScenarioDataOverride = (
+    className: string,
+    patch: Partial<ScenarioDataOverride>,
+  ) => {
+    setScenarioDataOverrides((prev) => ({
+      ...prev,
+      [className]: { ...prev[className], ...patch },
+    }))
+  }
+
+  const dataFileOptions = useMemo(
+    () => dataFiles.map((f) => ({ value: f.name, label: f.name })),
+    [dataFiles],
+  )
+
+  const strategyOptions = [
+    { value: 'cycle', label: 'cycle（顺序轮询）' },
+    { value: 'random', label: 'random（随机）' },
+  ]
+
   const handleExecute = useCallback(async () => {
     if (selectedClassNames.length === 0) {
       message.warning('请至少选择一个测试场景')
@@ -141,6 +197,19 @@ export default function TestTaskPanel() {
     setExecuting(true)
     try {
       const runTimeParam = runUntilStop ? undefined : `${durationMinutes}m`
+      const scenarioData: Record<string, ScenarioDataOverride> = {}
+      for (const className of selectedClassNames) {
+        const meta = scenarios.find((s) => s.class_name === className)
+        if (!meta?.parametrized) continue
+        const override = scenarioDataOverrides[className]
+        if (override?.data_file) {
+          scenarioData[className] = {
+            data_file: override.data_file,
+            data_strategy: override.data_strategy || meta.data_strategy || 'cycle',
+          }
+        }
+      }
+
       const res = await startPlatformSwarm({
         shape_class: activeShape?.class_name,
         shape_params: activeShape ? shapeParamValues : undefined,
@@ -148,6 +217,7 @@ export default function TestTaskPanel() {
         spawn_rate: activeShape ? undefined : spawnRate,
         run_time: runTimeParam,
         user_classes: selectedClassNames,
+        scenario_data: Object.keys(scenarioData).length > 0 ? scenarioData : undefined,
       })
       if (res.success) {
         message.success(res.message || '压测已启动')
@@ -161,6 +231,8 @@ export default function TestTaskPanel() {
     }
   }, [
     selectedClassNames,
+    scenarios,
+    scenarioDataOverrides,
     activeShape,
     shapeParamValues,
     userCount,
@@ -231,18 +303,56 @@ export default function TestTaskPanel() {
         {filteredScenarios.length === 0 ? (
           <Empty description="scenarios/ 下暂无可用场景（需定义 HttpUser 子类）" />
         ) : (
-          filteredScenarios.map((item) => (
-            <div key={item.id} className="scenario-item">
-              <Checkbox
-                checked={selectedClassNames.includes(item.class_name)}
-                onChange={(e) => toggleScenario(item.class_name, e.target.checked)}
-              />
-              <span className="scenario-name">{item.class_name}</span>
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {item.filename}
-              </Typography.Text>
-            </div>
-          ))
+          filteredScenarios.map((item) => {
+            const selected = selectedClassNames.includes(item.class_name)
+            const override = scenarioDataOverrides[item.class_name]
+            return (
+              <div key={item.id} className="scenario-item">
+                <Checkbox
+                  checked={selected}
+                  onChange={(e) => toggleScenario(item.class_name, e.target.checked)}
+                />
+                <div className="scenario-item-main">
+                  <span className="scenario-name">{item.class_name}</span>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {item.filename}
+                  </Typography.Text>
+                  {item.parametrized && selected && (
+                    <div className="scenario-data-row">
+                      <span className="scenario-data-label">参数化文件</span>
+                      <Select
+                        size="small"
+                        style={{ width: 160 }}
+                        placeholder="选择数据文件"
+                        options={dataFileOptions}
+                        value={override?.data_file || item.default_data_file}
+                        onChange={(v) =>
+                          updateScenarioDataOverride(item.class_name, { data_file: v })
+                        }
+                      />
+                      <span className="scenario-data-label">策略</span>
+                      <Select
+                        size="small"
+                        style={{ width: 140 }}
+                        options={strategyOptions}
+                        value={
+                          override?.data_strategy || item.data_strategy || 'cycle'
+                        }
+                        onChange={(v) =>
+                          updateScenarioDataOverride(item.class_name, { data_strategy: v })
+                        }
+                      />
+                    </div>
+                  )}
+                  {item.parametrized && !selected && (
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      默认数据：{item.default_data_file || '—'}
+                    </Typography.Text>
+                  )}
+                </div>
+              </div>
+            )
+          })
         )}
         {filteredScenarios.some((s) => s.description) && (
           <div style={{ marginTop: 12 }}>

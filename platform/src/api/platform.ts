@@ -5,6 +5,19 @@ export interface ScenarioMeta {
   filename: string
   class_name: string
   description: string
+  parametrized?: boolean
+  default_data_file?: string
+  data_strategy?: string
+}
+
+export interface DataFileMeta {
+  name: string
+  filename: string
+}
+
+export interface ScenarioDataOverride {
+  data_file?: string
+  data_strategy?: string
 }
 
 export interface ShapeParam {
@@ -32,12 +45,23 @@ export interface PlatformSwarmParams {
   host?: string
   run_time?: string
   user_classes?: string[]
+  /** 按场景类名覆盖参数化文件与分配策略 */
+  scenario_data?: Record<string, ScenarioDataOverride>
 }
 
 export function fetchScenarios(): Promise<{ scenarios: ScenarioMeta[] }> {
   return fetch(`${locustApiBase}/platform/scenarios`, { credentials: 'include' }).then(
     async (res) => {
       if (!res.ok) throw new Error(`加载场景失败 (${res.status})`)
+      return res.json()
+    },
+  )
+}
+
+export function fetchDataFiles(): Promise<{ data_files: DataFileMeta[] }> {
+  return fetch(`${locustApiBase}/platform/data-files`, { credentials: 'include' }).then(
+    async (res) => {
+      if (!res.ok) throw new Error(`加载数据文件失败 (${res.status})`)
       return res.json()
     },
   )

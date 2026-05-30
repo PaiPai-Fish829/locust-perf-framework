@@ -120,3 +120,10 @@ def _get_allocator(file_name: str, strategy: str) -> UserDataAllocator:
 def assign_user_row(user: Any, file_name: str, strategy: str = "cycle") -> dict[str, Any]:
     allocator = _get_allocator(file_name, strategy=strategy)
     return allocator.assign_for_user(id(user))
+
+
+def clear_data_caches() -> None:
+    """切换参数化文件或策略时清空分配器与文件缓存。"""
+    with _CACHE_LOCK:
+        _FILE_CACHE.clear()
+        _ALLOCATORS.clear()

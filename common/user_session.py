@@ -1,9 +1,5 @@
 """
-虚拟用户会话：统一管理 token / Cookie / 鉴权头。
-
-两种模式：
-- ``auto``：scenario 在 ``on_start`` 调用 ``login_task`` 一次（断言在接口层）
-- ``manual``：使用 ``data.token`` 或 ``LOCUST_MANUAL_TOKEN``
+虚拟用户会话：登录成功后才允许业务接口。
 """
 
 from __future__ import annotations
@@ -33,6 +29,7 @@ class UserSession:
         self.token = (token or "").strip()
         self.php_sessid = ""
         self.ready = False
+        self.login_ok = False
 
     @classmethod
     def from_parametrize_data(cls, client: Any, data: Mapping[str, Any] | None) -> UserSession:
@@ -55,59 +52,59 @@ class UserSession:
     def is_manual(self) -> bool:
         return self.mode == AuthMode.MANUAL
 
-    @property
-    def is_auto(self) -> bool:
-        return self.mode == AuthMode.AUTO
-
-    def login_once(
-        self,
-        login_data: Mapping[str, Any] | None = None,
-        expvalue: Mapping[str, Any] | None = None,
-    ) -> None:
-        """自动模式：执行登录接口（含断言），并同步 Cookie。"""
+    def login_once(self, login_data: Mapping[str, Any] | None = None) -> bool:
         if self.is_manual:
             raise RuntimeError("manual 模式不应调用 login_once")
-        login_task(self.client, dict(login_data or {}), expvalue)
-        self.sync_from_client()
+        self.login_ok = login_task(self.client, dict(login_data or {}))
+        if self.login_ok:
+            self.sync_from_client()
+            self.ready = True
+        else:
+            self.ready = False
+        return self.login_ok
 
     def apply_manual_token(self, token: str | None = None) -> None:
         value = (token or self.token or "").strip()
         if not value:
-            raise ValueError("manual 模式需要非空 token（data.token 或 LOCUST_MANUAL_TOKEN）")
+            raise ValueError("manual 模式需要非空 token")
         self.token = value
         self.mode = AuthMode.MANUAL
+        self.login_ok = True
         self.ready = True
 
     def sync_from_client(self) -> None:
         cookies = getattr(self.client, "cookies", None)
         if cookies is None:
             return
-        for key in ("token", "ECSCP_ID", "PHPSESSID"):
+        for key in ("token", "ECSCP_ID", "PHPSESSID", "ECS_ID"):
             value = cookies.get(key)
             if value:
-                if key == "PHPSESSID":
+                if key in ("PHPSESSID", "ECS_ID"):
                     self.php_sessid = str(value)
                 elif key == "token" or not self.token:
                     self.token = str(value)
-        self.ready = True
 
     def php_session_id(self) -> str:
-        """ecshop 等 PHP 站点登录后常用 PHPSESSID，供业务接口 session 头使用。"""
         if self.php_sessid:
             return self.php_sessid
         cookies = getattr(self.client, "cookies", None)
         if cookies is not None:
-            value = cookies.get("PHPSESSID")
-            if value:
-                return str(value)
+            for key in ("PHPSESSID", "ECS_ID"):
+                value = cookies.get(key)
+                if value:
+                    return str(value)
         return ""
+
+    def require_logged_in(self) -> None:
+        if not self.login_ok:
+            raise RuntimeError("登录未成功，跳过业务请求")
 
     def require_ready(self) -> None:
         if not self.ready:
-            raise RuntimeError("会话未初始化：请先在 scenario.on_start 完成登录或注入 token")
+            raise RuntimeError("会话未就绪")
 
     def headers(self, extra: Mapping[str, str] | None = None) -> dict[str, str]:
-        self.require_ready()
+        self.require_logged_in()
         headers: dict[str, str] = {}
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"

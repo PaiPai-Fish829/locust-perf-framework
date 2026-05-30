@@ -19,7 +19,7 @@ environments:
 
     # 参数化数据文件路径（支持 .csv/.yaml/.yml；空字符串表示不启用）
     # 仅用于需要数据驱动的场景，不是所有接口都必须配置
-    data_file: "users.csv"
+    data_file: "users.yaml"
     # 数据分配策略：cycle / random（每个虚拟用户在 on_start 固定分配一条）
     data_strategy: "cycle"
     test_shape:
@@ -40,7 +40,7 @@ environments:
     locust_run_time: "10m"
     locust_web_port: 8090
     locust_web_reload: true
-    data_file: "users.csv"
+    data_file: "users.yaml"
     data_strategy: "cycle"
     test_shape:
       default_shape: "stage"
@@ -59,7 +59,7 @@ environments:
     locust_web_port: 8091
     # 生产环境建议关闭自动重载，避免调试脚本触发重启
     locust_web_reload: false
-    data_file: "users.csv"
+    data_file: "users.yaml"
     data_strategy: "cycle"
     test_shape:
       default_shape: "stage"

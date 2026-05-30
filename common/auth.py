@@ -7,10 +7,10 @@ from typing import Any, Dict
 from common.user_session import UserSession
 
 
-def login(client, data: dict | None = None, expvalue: dict | None = None) -> Dict[str, str]:
+def login(client, data: dict | None = None) -> Dict[str, str]:
     session = UserSession.from_parametrize_data(client, data or {})
     if session.is_manual:
         session.apply_manual_token()
     else:
-        session.login_once(data, expvalue or {"status_code": 200})
+        session.login_once(data)
     return session.as_dict()

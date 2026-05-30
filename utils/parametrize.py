@@ -36,16 +36,7 @@ RowDict = dict[str, Any]
 CaseDict = dict[str, dict[str, Any]]
 CaseSource = str | Sequence[RowDict]
 
-EXPVALUE_KEYS = frozenset(
-    {
-        "status_code",
-        "expected_code",
-        "expected_status",
-        "expected_body",
-        "expected_json",
-        "expected_text",
-    }
-)
+EXPVALUE_KEYS = frozenset({"contains"})
 EXP_PREFIXES = ("expvalue.", "exp.")
 
 
@@ -127,37 +118,40 @@ def bind_scenario_case(
     return _attach_case_to_user(user, normalize_case(raw))
 
 
-def expected_status_code(expvalue: dict[str, Any]) -> int:
-    raw = expvalue.get("status_code", expvalue.get("expected_code", 200))
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return 200
-
-
 def check_expvalue(response: Any, expvalue: dict[str, Any]) -> None:
-    """已弃用：请在 ``tasks/*_task.py`` 内使用 ``utils.api_assert.assert_http_response``。"""
-    from utils.api_assert import assert_http_response
-
-    assert_http_response(response, expvalue, "legacy")
+    """已弃用：断言请直接写在 ``tasks/*_task.py``。"""
+    raise NotImplementedError("请使用 tasks 内硬编码 assert")
 
 
 def scenario_cases(
-    source: CaseSource | None,
+    source: CaseSource | None = None,
     *,
-    strategy: str = "cycle",
+    strategy: str | None = None,
 ) -> Callable[[F], F]:
-    """挂在 ``HttpUser.on_start``：加载参数化并写入 ``self.data`` / ``self.expvalue``。"""
+    """挂在 ``HttpUser.on_start``：加载参数化并写入 ``self.data`` / ``self.expvalue``。
+
+    ``source`` 省略时按顺序解析：平台运行时覆盖 → 场景类 ``default_data_file`` → ``locust-config`` 全局 ``data_file``。
+    """
+
+    decorator_file = source if isinstance(source, str) else None
 
     def decorator(func: F) -> F:
         @wraps(func)
         def wrapper(user, *args, **kwargs):
-            if source:
-                bind_scenario_case(user, source, strategy=strategy)
+            from utils.scenario_data import resolve_scenario_data_config
+
+            data_file, resolved_strategy = resolve_scenario_data_config(
+                user, decorator_file, strategy
+            )
+            if data_file:
+                bind_scenario_case(user, data_file, strategy=resolved_strategy)
+            elif source and not isinstance(source, str):
+                bind_scenario_case(user, source, strategy=resolved_strategy)
             else:
                 _attach_case_to_user(user, {DATA_ATTR: {}, EXPVALUE_ATTR: {}})
             return func(user, *args, **kwargs)
 
+        wrapper._scenario_cases_decorated = True  # type: ignore[attr-defined]
         return wrapper  # type: ignore[return-value]
 
     return decorator
