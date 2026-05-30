@@ -1,129 +1,139 @@
-Locust 压测监控平台 — 待接入接口清单
-=====================================
-生成时间：2026-05-29
-Locust 版本参考：2.44.0
-API 基址：{locustApiBase}（开发环境默认 /locust-api 代理至 VITE_LOCUST_URL）
-
-一、已接入的 Locust 原生接口
-----------------------------
-[√] GET  /stats/requests          — KPI 卡片、API 统计表、失败明细、图表数据源（轮询 2s）
-[√] GET  /exceptions              — 异常统计表
-[√] GET  /logs                    — 底部日志预览（master 最近 5 条）
-[√] POST /swarm                   — 测试任务页「立即执行」（user_count、spawn_rate、run_time）
-[√] GET  /stop                    — 顶部「停止运行」按钮
-[√] GET  /stats/requests/csv      — 导出：请求统计 CSV
-[√] GET  /stats/failures/csv      — 导出：失败明细 CSV
-[√] GET  /exceptions/csv          — 导出：异常 CSV
-[√] GET  /stats/report?download=1 — 导出：HTML 报告
-
-二、Locust 原生接口 — 尚未接入
-------------------------------
-[ ] POST /swarm（完整参数）
-    - host：目标 Host 覆盖
-    - shape_class：LoadTestShape 选择（阶梯/保持等）
-    - user_classes：UserClass 多选（需 --class-picker）
-    - profile：运行 profile
-    - 其他 parsed_options 透传字段
-    说明：当前仅传 user_count、spawn_rate、run_time，策略模板未映射到 shape_class
-
-[ ] GET  /stats/reset
-    说明：重置统计数据，可在「新任务开始前」或工具栏提供按钮
-
-[ ] GET  /stats/requests_full_history/csv
-    说明：需 Locust 启动时启用 stats_history_enabled；用于完整历史曲线导出
-
-[ ] GET  /tasks
-    返回：per_class / total 任务执行比例
-    说明：可用于「场景/task 占比」可视化，替代 mock 场景成功率
-
-[ ] GET  /worker-count
-    说明：分布式模式下展示 Worker 数量（Master 节点）
-
-[ ] GET  /stats/requests 中的 workers 字段
-    说明：Master 模式下 Worker 列表（id、state、user_count、cpu、memory）
-    建议：在「分布式执行」高级选项或独立面板展示
-
-[ ] POST /user
-    说明：运行时动态修改 User 类属性（Locust 高级用法）
-
-[ ] GET  /login、Web 认证
-    说明：若 Locust 启用 --web-login，前端需增加登录页与 Cookie 会话
-
-[ ] GET  /metrics（本项目扩展）
-    说明：common/metrics.py 暴露的 Prometheus 指标；可与 Grafana Tab 联动
-
-三、平台自有业务 — 需新建后端 API
---------------------------------
-以下功能在 AI 生成的 UI 中存在，但 Locust 不提供对应接口，需框架侧自行实现：
-
-[ ] 测试场景库
-    - 场景 CRUD、分组、标签、历史成功率
-    - 对应 UI：「选择测试场景」列表、搜索、标签筛选
-    - 建议：读取 scenarios/ 目录或 MySQL 场景表
-
-[ ] 测试策略库
-    - 策略模板 CRUD（阶梯增长、波浪形、突发峰值等）
-    - 对应 UI：「管理策略库」、策略预览图
-    - 建议：映射到 shapes/ 下 LoadTestShape 配置 + YAML 存储
-
-[ ] 任务草稿 / 任务历史
-    - 保存草稿、任务列表、定时任务调度
-    - 对应 UI：「保存草稿」、任务名称、定时执行
-    - 建议：MySQL 任务表 + 可选 Celery/APScheduler
-
-[ ] 定时执行
-    - 对应 UI：「定时执行」+ DatePicker
-    - Locust 无内置定时；需平台调度器触发 POST /swarm
-
-[ ] 思考时间 / wait_time
-    - 对应 UI：高级选项「思考时间设置」
-    - 需写入 locustfile User 类或场景配置，非 Locust Web API
-
-[ ] CSV 参数化路径 / 数据分配策略
-    - 对应 UI：「数据参数化」
-    - 框架已有 data/users.csv + common/data_loader.py，需配置 API 读写
-
-[ ] 分布式 Worker 管理
-    - 对应 UI：Worker 节点数、Master 地址、期望 Worker 数
-    - Locust 仅提供 worker 状态查询，Worker 进程启停需运维/脚本层
-
-[ ] 结果输出路径 / 自动报告
-    - 对应 UI：「自动保存测试报告」「输出 CSV 路径」
-    - 建议：对接 scripts/run.py stress 无头模式 + reports/ 目录
-
-[ ] WebSocket 实时推送
-    - 对应 UI：「实时推送数据到 WebSocket」
-    - Locust Web UI 使用轮询；若需 WS 需自建推送服务
-
-[ ] Prometheus 导出开关
-    - 对应 UI：「导出 Prometheus 格式」
-    - 项目已固定暴露 /metrics；此处可做 Grafana 嵌入 Tab（VITE_GRAFANA_URL）
-
-[ ] 测试报告模块
-    - 对应 UI：「测试报告」菜单
-    - 建议：聚合 /stats/report、历史 CSV、reports/ 目录文件列表
-
-[ ] 脚本库 / 策略库菜单
-    - 对应 UI：「测试资源」子菜单
-    - 建议：浏览 tasks/、scenarios/、shapes/ 源码树
-
-四、Grafana / 监控栈（可选）
----------------------------
-[ ] Grafana 仪表盘嵌入
-    - 环境变量：VITE_GRAFANA_URL
-    - 原 platform 设计为 iframe 嵌入 Prometheus 面板
-
-五、前端技术说明
-----------------
-- 原 zip 为 Vue + Element Plus + VTJ 低代码产物，已移植为 React + Ant Design + ECharts
-- 图表历史：客户端轮询 /stats/requests 累积最近 60 点（与 Locust 原生 UI 类似）
-- 开发跨域：vite.config.ts 配置 /locust-api 代理至 VITE_LOCUST_URL
-
-六、建议接入优先级
-------------------
-P0：POST /swarm 完整参数（host、shape_class）— 与 locust-config.yaml / shapes 对齐
-P1：场景库 API、策略库 API — 替换 mock 数据
-P1：GET /stats/reset — 新压测前清数据
-P2：Master workers 面板 — 分布式压测
-P2：Grafana Tab — 服务器性能监控
-P3：任务持久化、定时调度 — 完整任务管理闭环
+Locust 压测监控平台 — 待接入接口清单
+=====================================
+生成时间：2026-05-29
+更新说明：2026-05-30 根据仪表盘/测试任务已实现能力同步勾选
+Locust 版本参考：2.44.0
+API 基址：{locustApiBase}（开发环境默认 /locust-api 代理至 VITE_LOCUST_URL）
+
+一、已接入的 Locust 原生接口
+----------------------------
+[√] GET  /stats/requests          — KPI 卡片、API 统计表、失败明细、图表（轮询 2s，total_rps 与原生 WebUI 图表一致）
+[√] GET  /exceptions              — 异常统计表
+[√] GET  /logs                    — 底部日志预览（master 最近 5 条）
+[√] POST /swarm                   — 测试任务页「立即执行」（经 /platform/swarm，含 shape_class、user_classes、run_time 等）
+[√] GET  /stop                    — 顶部「停止运行」按钮
+[√] GET  /stats/requests/csv      — 导出：请求统计 CSV
+[√] GET  /stats/failures/csv      — 导出：失败明细 CSV
+[√] GET  /exceptions/csv          — 导出：异常 CSV
+[√] GET  /stats/report?download=1 — 导出：HTML 报告
+
+二、Locust 原生接口 — 尚未接入
+------------------------------
+[√] POST /swarm（完整参数）
+    - host：目标 Host 覆盖（platform/swarm 支持）
+    - shape_class：LoadTestShape 选择（已对接 shapes/）
+    - user_classes：UserClass 多选（已传 user_classes）
+    - run_time：执行时长（已支持）
+    - profile、其他 parsed_options 透传字段：仍未接入
+
+[ ] GET  /stats/reset
+    说明：重置统计数据，可在「新任务开始前」或工具栏提供按钮
+
+[√] GET  /stats/requests 图表导出（客户端）
+    - 单图 PNG（ECharts getDataURL）
+    - 图表时序 CSV（客户端累积 history）
+    - 说明：非 Locust 原生路由，由平台前端实现
+
+[ ] GET  /stats/requests_full_history/csv
+    说明：需 Locust 启动时启用 stats_history_enabled；用于完整历史曲线导出
+
+[ ] GET  /tasks
+    返回：per_class / total 任务执行比例
+    说明：可用于「场景/task 占比」可视化
+
+[ ] GET  /worker-count
+    说明：分布式模式下展示 Worker 数量（Master 节点）
+
+[ ] GET  /stats/requests 中的 workers 字段
+    说明：Master 模式下 Worker 列表（id、state、user_count、cpu、memory）
+
+[ ] POST /user
+    说明：运行时动态修改 User 类属性（Locust 高级用法）
+
+[ ] GET  /login、Web 认证
+    说明：若 Locust 启用 --web-login，前端需增加登录页与 Cookie 会话
+
+[ ] GET  /metrics（本项目扩展）
+    说明：common/metrics.py 暴露的 Prometheus 指标；可与 Grafana Tab 联动
+
+三、平台自有业务 — 需新建后端 API
+--------------------------------
+[√] GET  /platform/scenarios
+    - 读取 scenarios/ 目录 HttpUser 子类，测试任务页场景列表
+
+[√] GET  /platform/shapes
+    - 读取 shapes/ 下 LoadTestShape，含 param_schema
+
+[√] POST /platform/swarm
+    - 平台启动压测（shape_class、user_classes、run_time、user_count/spawn_rate 等）
+
+[√] GET  /platform/stats/history
+    - 返回 runner.stats.history（备用；实时图表现以 /stats/requests 轮询为准）
+
+[√] 仪表盘图表能力（前端）
+    - 压测运行中记录、停止后暂停；新压测清空会话
+    - 折线无平滑；ECharts 多图联动（connect + 虚线纵轴）
+    - 实时图表状态置顶板块
+
+[√] 仪表盘导出 PNG（前端 html2canvas / ECharts）
+    - 各图表右上角下载 PNG
+    - API 统计表、聚合报告下载 PNG
+
+[ ] 测试场景库（持久化 CRUD）
+    - 场景 CRUD、分组、标签、历史成功率
+    - 当前仅为目录扫描，非数据库管理
+
+[ ] 测试策略库（持久化 CRUD）
+    - 策略模板 CRUD、策略预览图
+    - 当前仅为 shapes/ 扫描 + 启动时选择
+
+[ ] 任务草稿 / 任务历史
+    - 保存草稿、任务列表、定时任务调度
+
+[ ] 定时执行
+    - Locust 无内置定时；需平台调度器触发 POST /swarm
+
+[ ] 思考时间 / wait_time
+    - 需写入 locustfile User 类或场景配置
+
+[ ] CSV 参数化路径 / 数据分配策略（配置 API）
+    - 框架已有 data/users.csv + common/data_loader.py，需配置 API 读写
+
+[ ] 分布式 Worker 管理
+    - Worker 进程启停需运维/脚本层
+
+[ ] 结果输出路径 / 自动报告
+    - 对接 scripts/run.py stress + reports/ 目录
+
+[ ] WebSocket 实时推送
+    - 当前为轮询；若需 WS 需自建推送服务
+
+[ ] Prometheus 导出开关 / Grafana Tab
+    - VITE_GRAFANA_URL iframe 嵌入
+
+[ ] 测试报告模块
+    - 「测试报告」菜单仍为占位页
+
+[ ] 脚本库 / 策略库菜单
+    - 「测试资源」子菜单仍为占位页（任务页已可选场景/策略）
+
+四、Grafana / 监控栈（可选）
+---------------------------
+[ ] Grafana 仪表盘嵌入
+    - 环境变量：VITE_GRAFANA_URL
+
+五、前端技术说明
+----------------
+- 技术栈：React + Ant Design + ECharts + html2canvas
+- 图表：轮询 GET /stats/requests（2s），使用 total_rps / total_fail_per_sec 绘制（与 Locust 原生 WebUI 实时图表一致）
+- 图表历史：客户端按会话累积采样点（非服务端 stats.history 主路径）
+- 开发跨域：vite.config.ts 配置 /locust-api 代理至 VITE_LOCUST_URL
+
+六、建议接入优先级
+------------------
+P0：GET /stats/reset — 新压测前清数据（避免历史曲线残留）
+P1：任务持久化、定时调度 — 完整任务管理闭环
+P2：Master workers 面板 — 分布式压测
+P2：Grafana Tab — 服务器性能监控
+P3：场景/策略库 CRUD — 超越目录扫描
+

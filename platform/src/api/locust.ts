@@ -64,10 +64,12 @@ export interface LocustException {
 }
 
 export interface SwarmParams {
-  user_count: number
-  spawn_rate: number
+  user_count?: number
+  spawn_rate?: number
   host?: string
   run_time?: string
+  shape_class?: string
+  user_classes?: string[]
 }
 
 async function locustFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -90,6 +92,27 @@ export function fetchStats(): Promise<LocustStatsReport> {
   return locustFetch<LocustStatsReport>('/stats/requests')
 }
 
+/** Locust 服务端 stats.history 单条记录（与原生 WebUI 图表一致） */
+export interface LocustStatsHistoryEntry {
+  time: string
+  current_rps?: [string, number]
+  current_fail_per_sec?: [string, number]
+  user_count?: [string, number]
+  'response_time_percentile_0.5'?: [string, number]
+  'response_time_percentile_0.95'?: [string, number]
+  [key: string]: string | [string, number] | undefined
+}
+
+export function fetchStatsHistory(): Promise<{ history: LocustStatsHistoryEntry[] }> {
+  return locustFetch('/platform/stats/history')
+}
+
+export function getAggregatedStat(
+  report: LocustStatsReport | null,
+): LocustStatEntry | undefined {
+  return report?.stats?.find((s) => s.name === 'Aggregated')
+}
+
 export function fetchExceptions(): Promise<{ exceptions: LocustException[] }> {
   return locustFetch('/exceptions')
 }
@@ -108,10 +131,19 @@ export function resetStats(): Promise<string> {
 
 export async function startSwarm(params: SwarmParams): Promise<{ success: boolean; message: string }> {
   const body = new URLSearchParams()
-  body.set('user_count', String(params.user_count))
-  body.set('spawn_rate', String(params.spawn_rate))
+  if (params.shape_class) {
+    body.set('shape_class', params.shape_class)
+  } else {
+    if (params.user_count != null) body.set('user_count', String(params.user_count))
+    if (params.spawn_rate != null) body.set('spawn_rate', String(params.spawn_rate))
+  }
   if (params.host) body.set('host', params.host)
   if (params.run_time) body.set('run_time', params.run_time)
+  if (params.user_classes?.length) {
+    for (const cls of params.user_classes) {
+      body.append('user_classes', cls)
+    }
+  }
 
   const res = await fetch(`${locustApiBase}/swarm`, {
     method: 'POST',

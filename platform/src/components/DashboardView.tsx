@@ -1,16 +1,20 @@
-import { useMemo } from 'react'
-import ReactECharts from 'echarts-for-react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
+import * as echarts from 'echarts'
+import type ReactECharts from 'echarts-for-react'
 import {
   Alert,
   Button,
   Dropdown,
+  Popconfirm,
   Progress,
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from 'antd'
+import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import {
   exportUrl,
@@ -21,9 +25,18 @@ import {
   type LocustStatEntry,
   type LocustStatsError,
 } from '../api/locust'
-import { useLocustStats } from '../hooks/useLocustStats'
+import ChartPanel from './ChartPanel'
+import type { LocustDashboardData } from '../hooks/useLocustStats'
+import {
+  buildLinkedTimeLineOption,
+  chartTheme,
+  exportChartPng,
+  exportHistoryCsv,
+  timeSeriesData,
+} from '../utils/dashboardCharts'
+import { exportDomPng, fileStamp } from '../utils/exportDom'
 
-const THEME = '#15803d'
+const THEME = chartTheme
 const P95_THRESHOLD = 500
 
 function round(val: number | null | undefined, digits = 0): string {
@@ -137,112 +150,151 @@ const exceptionColumns: ColumnsType<ExceptionRow> = [
   { title: '堆栈摘要', dataIndex: 'stackSummary', ellipsis: true },
 ]
 
-export default function DashboardView() {
+interface DashboardViewProps {
+  stats: LocustDashboardData
+  visible?: boolean
+}
+
+export default function DashboardView({ stats, visible = true }: DashboardViewProps) {
   const {
-    report,
+    aggregated,
     apiStats,
     failDetails,
     exceptions,
     recentLogs,
     history,
+    kpi,
+    recording,
     connected,
     error,
-    peakRps,
-    peakUsers,
-  } = useLocustStats()
+    clearChartHistory,
+  } = stats
 
-  const total = report?.stats?.find((s) => s.name === 'Aggregated')
-  const failRatio = report?.fail_ratio ?? 0
-  const successRate = Math.max(0, (1 - failRatio) * 100)
-  const p95 =
-    report?.current_response_time_percentiles?.['response_time_percentile_0.95'] ?? 0
+  const rpsChartRef = useRef<ReactECharts>(null)
+  const rtChartRef = useRef<ReactECharts>(null)
+  const usersChartRef = useRef<ReactECharts>(null)
+  const apiTableRef = useRef<HTMLDivElement>(null)
+  const aggregatedRef = useRef<HTMLDivElement>(null)
+
+  const downloadCapture = useCallback(async (el: HTMLDivElement | null, name: string) => {
+    const ok = await exportDomPng(el, `${name}-${fileStamp()}.png`)
+    if (!ok) message.warning('内容尚未就绪，请稍后重试')
+  }, [])
+
+  const LINKED_CHART_GROUP = 'locust-dashboard-charts'
+
+  useEffect(() => {
+    const instances = [rpsChartRef, rtChartRef, usersChartRef]
+      .map((ref) => ref.current?.getEchartsInstance())
+      .filter((inst): inst is NonNullable<typeof inst> => inst != null)
+
+    for (const inst of instances) {
+      inst.group = LINKED_CHART_GROUP
+    }
+    if (instances.length >= 2) {
+      echarts.connect(LINKED_CHART_GROUP)
+    }
+    return () => {
+      if (instances.length >= 2) {
+        echarts.disconnect(LINKED_CHART_GROUP)
+      }
+    }
+  })
+
+  useEffect(() => {
+    if (!visible) return
+    const id = window.requestAnimationFrame(() => {
+      for (const ref of [rpsChartRef, rtChartRef, usersChartRef]) {
+        ref.current?.getEchartsInstance()?.resize()
+      }
+    })
+    return () => window.cancelAnimationFrame(id)
+  }, [visible, history.length])
+
+  const handleClearCharts = useCallback(() => {
+    clearChartHistory()
+    message.success('图表与实时指标已清空')
+  }, [clearChartHistory])
+
+  const total = aggregated
+  const { totalRps, failRatio, successRate, p95, userCount, peakRps, peakUsers } = kpi
+
+  const emptyChartHint = recording
+    ? '压测启动后将开始绘制折线'
+    : history.length > 0
+      ? '记录已暂停，显示上次压测数据'
+      : '压测未运行，暂无图表数据'
 
   const rpsOption = useMemo(
-    () => ({
-      tooltip: { trigger: 'axis' as const },
-      legend: { data: ['总请求/秒', '失败请求/秒'], right: 0 },
-      xAxis: {
-        type: 'category' as const,
-        data: history.map((h) => h.time),
-        axisLabel: { fontSize: 10 },
-      },
-      yAxis: { type: 'value' as const, name: '请求数' },
-      series: [
-        {
-          name: '总请求/秒',
-          type: 'line' as const,
-          data: history.map((h) => h.totalRps),
-          smooth: true,
-          lineStyle: { color: THEME, width: 2 },
-          symbol: 'none',
-        },
-        {
-          name: '失败请求/秒',
-          type: 'line' as const,
-          data: history.map((h) => h.failPerSec),
-          smooth: true,
-          lineStyle: { color: '#F56C6C', width: 2 },
-          symbol: 'none',
-        },
-      ],
-    }),
+    () =>
+      buildLinkedTimeLineOption({
+        legend: { data: ['RPS', 'Failures/s'] },
+        yAxis: { type: 'value', name: '请求数', min: 0 },
+        series: [
+          {
+            name: 'RPS',
+            type: 'line',
+            data: timeSeriesData(history, (h) => h.totalRps),
+            smooth: false,
+            lineStyle: { color: THEME, width: 2 },
+            symbol: 'none',
+          },
+          {
+            name: 'Failures/s',
+            type: 'line',
+            data: timeSeriesData(history, (h) => h.totalFailPerSec),
+            smooth: false,
+            lineStyle: { color: '#F56C6C', width: 2 },
+            symbol: 'none',
+          },
+        ],
+      }),
     [history],
   )
 
   const responseTimeOption = useMemo(
-    () => ({
-      tooltip: { trigger: 'axis' as const },
-      legend: { data: ['P50', 'P95'], right: 0 },
-      xAxis: {
-        type: 'category' as const,
-        data: history.map((h) => h.time),
-        axisLabel: { fontSize: 10 },
-      },
-      yAxis: { type: 'value' as const, name: 'ms', min: 0 },
-      series: [
-        {
-          name: 'P50',
-          type: 'line' as const,
-          data: history.map((h) => h.p50),
-          smooth: true,
-          lineStyle: { color: '#67C23A', width: 2 },
-          symbol: 'none',
-        },
-        {
-          name: 'P95',
-          type: 'line' as const,
-          data: history.map((h) => h.p95),
-          smooth: true,
-          lineStyle: { color: '#E6A23C', width: 2 },
-          symbol: 'none',
-        },
-      ],
-    }),
+    () =>
+      buildLinkedTimeLineOption({
+        legend: { data: ['P50', 'P95'] },
+        yAxis: { type: 'value', name: 'ms', min: 0 },
+        series: [
+          {
+            name: 'P50',
+            type: 'line',
+            data: timeSeriesData(history, (h) => h.p50),
+            smooth: false,
+            lineStyle: { color: '#67C23A', width: 2 },
+            symbol: 'none',
+          },
+          {
+            name: 'P95',
+            type: 'line',
+            data: timeSeriesData(history, (h) => h.p95),
+            smooth: false,
+            lineStyle: { color: '#E6A23C', width: 2 },
+            symbol: 'none',
+          },
+        ],
+      }),
     [history],
   )
 
   const activeUsersOption = useMemo(
-    () => ({
-      tooltip: { trigger: 'axis' as const },
-      xAxis: {
-        type: 'category' as const,
-        data: history.map((h) => h.time),
-        axisLabel: { fontSize: 10 },
-      },
-      yAxis: { type: 'value' as const, name: '用户数' },
-      series: [
-        {
-          name: '活跃用户数',
-          type: 'line' as const,
-          data: history.map((h) => h.userCount),
-          smooth: true,
-          lineStyle: { color: THEME, width: 2 },
-          symbol: 'circle',
-          symbolSize: 4,
-          areaStyle: { color: 'rgba(21,128,61,0.15)' },
-        },
-      ],
-    }),
+    () =>
+      buildLinkedTimeLineOption({
+        legend: { data: ['Number of Users'] },
+        yAxis: { type: 'value', name: '用户数', min: 0 },
+        series: [
+          {
+            name: 'Number of Users',
+            type: 'line',
+            data: timeSeriesData(history, (h) => h.userCount),
+            smooth: false,
+            lineStyle: { color: THEME, width: 2 },
+            symbol: 'none',
+          },
+        ],
+      }),
     [history],
   )
 
@@ -266,6 +318,9 @@ export default function DashboardView() {
   )
 
   const exportMenuItems = [
+    { key: 'charts-csv', label: '图表时序数据 CSV' },
+    { key: 'charts-png-all', label: '导出全部图表 PNG' },
+    { type: 'divider' as const },
     { key: 'requests', label: '请求统计 CSV' },
     { key: 'failures', label: '失败明细 CSV' },
     { key: 'exceptions', label: '异常 CSV' },
@@ -273,6 +328,25 @@ export default function DashboardView() {
   ]
 
   const handleExport = ({ key }: { key: string }) => {
+    if (key === 'charts-csv') {
+      if (!exportHistoryCsv(history)) {
+        message.warning('暂无图表数据可导出')
+      }
+      return
+    }
+    if (key === 'charts-png-all') {
+      if (history.length === 0) {
+        message.warning('暂无图表数据可导出')
+        return
+      }
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+      const ok =
+        exportChartPng(rpsChartRef.current?.getEchartsInstance(), `rps-${stamp}.png`) &&
+        exportChartPng(rtChartRef.current?.getEchartsInstance(), `response-time-${stamp}.png`) &&
+        exportChartPng(usersChartRef.current?.getEchartsInstance(), `users-${stamp}.png`)
+      if (!ok) message.warning('图表尚未就绪，请稍后重试')
+      return
+    }
     const paths: Record<string, string> = {
       requests: '/stats/requests/csv',
       failures: '/stats/failures/csv',
@@ -281,6 +355,12 @@ export default function DashboardView() {
     }
     window.open(exportUrl(paths[key] ?? '/stats/requests/csv'), '_blank')
   }
+
+  const chartRecordingTag = recording ? (
+    <Tag color="processing">记录中</Tag>
+  ) : history.length > 0 ? (
+    <Tag>已停止记录</Tag>
+  ) : null
 
   return (
     <div>
@@ -299,7 +379,7 @@ export default function DashboardView() {
           <div className="kpi-header">
             <span className="kpi-label">当前 RPS</span>
           </div>
-          <div className="kpi-value">{round(report?.total_rps, 1)}</div>
+          <div className="kpi-value">{round(totalRps, 1)}</div>
           <div className="kpi-sub">
             峰值 <span className="highlight">{round(peakRps, 1)}</span>
           </div>
@@ -328,44 +408,154 @@ export default function DashboardView() {
           <div className="kpi-header">
             <span className="kpi-label">活跃用户数</span>
           </div>
-          <div className="kpi-value">{report?.user_count ?? 0}</div>
+          <div className="kpi-value">{userCount}</div>
           <div className="kpi-sub">
             峰值 <span className="highlight">{peakUsers}</span>
           </div>
         </div>
       </div>
 
-      <div className="glass-card chart-section">
-        <h3 className="chart-title">每秒请求数 (RPS)</h3>
-        <ReactECharts option={rpsOption} style={{ height: 260 }} notMerge />
-      </div>
-
-      <div className="glass-card chart-section">
-        <h3 className="chart-title">响应时间 (ms)</h3>
-        <ReactECharts option={responseTimeOption} style={{ height: 260 }} notMerge />
-      </div>
-
-      <div className="glass-card chart-section">
-        <h3 className="chart-title">活跃用户数趋势</h3>
-        <ReactECharts option={activeUsersOption} style={{ height: 260 }} notMerge />
-      </div>
-
-      <div className="glass-card table-section">
-        <h3 className="section-title">详细 API 统计</h3>
-        <Table<ApiStatRow>
-          size="small"
-          bordered
-          scroll={{ x: 1400 }}
-          pagination={false}
-          dataSource={mapApiStats(apiStats)}
-          columns={apiColumns}
-        />
-        {total && (
-          <Typography.Text type="secondary" style={{ fontSize: 12, marginTop: 8, display: 'block' }}>
-            聚合：{total.num_requests} 请求，{total.num_failures} 失败，平均响应 {round(total.avg_response_time, 1)} ms
+      <div className="glass-card chart-status-banner">
+        <div className="panel-header">
+          <h3 className="section-title">实时图表</h3>
+          <Popconfirm
+            title="确认清空全部图表数据？"
+            description="清除折线历史、当前 RPS、失败率等实时 KPI；不影响 Locust 服务端累计统计与下方表格。"
+            onConfirm={handleClearCharts}
+            okText="清空"
+            cancelText="取消"
+          >
+            <Tooltip title="清空全部图表数据">
+              <Button
+                type="text"
+                size="small"
+                className="panel-icon-btn"
+                icon={<ReloadOutlined />}
+                aria-label="清空全部图表数据"
+              />
+            </Tooltip>
+          </Popconfirm>
+        </div>
+        <div className="chart-status-body">
+          {chartRecordingTag}
+          <Typography.Text type="secondary" className="chart-status-hint">
+            {emptyChartHint}
           </Typography.Text>
-        )}
+          <Typography.Text type="secondary" className="chart-status-tip">
+            仅在压测运行期间记录；停止后保留上次数据。鼠标悬停任一图表可联动虚线纵轴。
+          </Typography.Text>
+        </div>
       </div>
+
+      <ChartPanel
+        title="Total Requests per Second"
+        option={rpsOption}
+        chartRef={rpsChartRef}
+        pngFilename="rps"
+        onReset={handleClearCharts}
+      />
+
+      <ChartPanel
+        title="响应时间 (ms)"
+        option={responseTimeOption}
+        chartRef={rtChartRef}
+        pngFilename="response-time"
+        onReset={handleClearCharts}
+      />
+
+      <ChartPanel
+        title="活跃用户数趋势"
+        option={activeUsersOption}
+        chartRef={usersChartRef}
+        pngFilename="users"
+        onReset={handleClearCharts}
+      />
+
+      <div className="glass-card table-section export-panel">
+        <div className="panel-header">
+          <h3 className="section-title">详细 API 统计</h3>
+          <Button
+            type="default"
+            size="small"
+            className="panel-header-action"
+            icon={<DownloadOutlined />}
+            onClick={() => downloadCapture(apiTableRef.current, 'api-stats')}
+          >
+            下载 PNG
+          </Button>
+        </div>
+        <div ref={apiTableRef} className="export-capture-target">
+          <Table<ApiStatRow>
+            size="small"
+            bordered
+            scroll={{ x: 1400 }}
+            pagination={false}
+            dataSource={mapApiStats(apiStats)}
+            columns={apiColumns}
+          />
+        </div>
+      </div>
+
+      {total && (
+        <div className="glass-card table-section export-panel">
+          <div className="panel-header">
+            <h3 className="section-title">聚合报告</h3>
+            <Button
+              type="default"
+              size="small"
+              className="panel-header-action"
+              icon={<DownloadOutlined />}
+              onClick={() => downloadCapture(aggregatedRef.current, 'aggregated-report')}
+            >
+              下载 PNG
+            </Button>
+          </div>
+          <div ref={aggregatedRef} className="aggregated-report-card export-capture-target">
+            <div className="aggregated-report-row">
+              <span className="aggregated-label">接口</span>
+              <span className="aggregated-value">{total.name}</span>
+            </div>
+            <div className="aggregated-report-row">
+              <span className="aggregated-label">总请求数</span>
+              <span className="aggregated-value">{total.num_requests}</span>
+            </div>
+            <div className="aggregated-report-row">
+              <span className="aggregated-label">失败数</span>
+              <span className="aggregated-value">{total.num_failures}</span>
+            </div>
+            <div className="aggregated-report-row">
+              <span className="aggregated-label">失败率</span>
+              <span className="aggregated-value">{(failRatio * 100).toFixed(2)}%</span>
+            </div>
+            <div className="aggregated-report-row">
+              <span className="aggregated-label">平均响应</span>
+              <span className="aggregated-value">{round(total.avg_response_time, 1)} ms</span>
+            </div>
+            <div className="aggregated-report-row">
+              <span className="aggregated-label">中位数</span>
+              <span className="aggregated-value">{round(total.median_response_time)} ms</span>
+            </div>
+            <div className="aggregated-report-row">
+              <span className="aggregated-label">P95</span>
+              <span className="aggregated-value">
+                {round((total['response_time_percentile_0.95'] as number) ?? 0)} ms
+              </span>
+            </div>
+            <div className="aggregated-report-row">
+              <span className="aggregated-label">当前 RPS</span>
+              <span className="aggregated-value">
+                {round(kpi.isLiveIdle ? 0 : total.current_rps, 1)}
+              </span>
+            </div>
+            <div className="aggregated-report-row">
+              <span className="aggregated-label">总 RPS</span>
+              <span className="aggregated-value">
+                {round(kpi.isLiveIdle ? 0 : total.total_rps, 1)}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="table-row">
         <div className="glass-card table-half left">

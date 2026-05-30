@@ -185,6 +185,120 @@
   margin: 0 0 12px 0;
 }
 
+.chart-section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.chart-section-header .chart-title {
+  margin: 0;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.panel-header .chart-title,
+.panel-header .section-title {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.panel-header-action {
+  flex-shrink: 0;
+}
+
+.panel-header-actions {
+  flex-shrink: 0;
+}
+
+.panel-icon-btn {
+  color: #15803d;
+}
+
+.panel-icon-btn:hover {
+  color: #166534 !important;
+  background: rgba(21, 128, 61, 0.08) !important;
+}
+
+.main-content-tabs {
+  position: relative;
+}
+
+.tab-panel-hidden {
+  display: none !important;
+}
+
+.chart-status-banner {
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.chart-status-banner .panel-header {
+  margin-bottom: 8px;
+}
+
+.chart-status-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.chart-status-hint {
+  font-size: 13px;
+}
+
+.chart-status-tip {
+  font-size: 12px;
+}
+
+.export-capture-target {
+  background: #fff;
+}
+
+.aggregated-report-card {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px 24px;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid rgba(21, 128, 61, 0.15);
+  border-radius: 8px;
+}
+
+.aggregated-report-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.aggregated-label {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.aggregated-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: #15803d;
+}
+
+.chart-empty-hint {
+  display: block;
+  padding: 48px 0;
+  text-align: center;
+  font-size: 13px;
+}
+
 .table-row {
   display: flex;
   gap: 20px;
@@ -313,6 +427,7 @@
 
 .section {
   margin-bottom: 20px;
+  padding: 10px 10px 10px 10px;
 }
 
 .section-header {
@@ -501,6 +616,7 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
+  padding: 10px 10px 10px 10px;
 }
 
 .bottom-summary {

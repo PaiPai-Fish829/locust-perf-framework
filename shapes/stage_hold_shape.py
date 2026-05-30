@@ -1,21 +1,29 @@
 from __future__ import annotations
 
 import math
-import os
 
-from locust import LoadTestShape
+from utils.configurable_shape import ConfigurableShape
 
-from config import settings
+SHAPE_DEFAULTS = {
+    "start_users": 10,
+    "step_users": 10,
+    "step_duration": 30,
+    "peak_users": 100,
+    "peak_hold_time": 60,
+    "total_time_limit": 0,
+    "spawn_rate": 10,
+}
+
+SHAPE_PARAMS = [
+    {"name": "start_users", "label": "起始用户数", "min": 1, "max": 100000, "unit": ""},
+    {"name": "step_users", "label": "每阶梯增加用户数", "min": 1, "max": 10000, "unit": ""},
+    {"name": "step_duration", "label": "阶梯时长", "min": 1, "max": 3600, "unit": "秒"},
+    {"name": "peak_users", "label": "峰值用户数", "min": 1, "max": 100000, "unit": ""},
+    {"name": "peak_hold_time", "label": "峰值保持时间", "min": 0, "max": 86400, "unit": "秒"},
+]
 
 
-def _env_int(name: str, default: int) -> int:
-    value = os.getenv(name)
-    if value is None or not value.strip():
-        return default
-    return int(value)
-
-
-class StageHoldShape(LoadTestShape):
+class StageHoldShape(ConfigurableShape):
     """
     阶梯 + 峰值保持压测模型。
 
@@ -24,24 +32,14 @@ class StageHoldShape(LoadTestShape):
     2) 每 step_duration 秒增加 step_users，直到 peak_users；
     3) 达到峰值后继续保持 peak_hold_time 秒；
     4) 达到停止条件后返回 None，Locust 自动结束。
-
-    扩展建议：
-    - 如果需要“每个阶梯内再线性爬升”，可把 tick 的阶梯值改为函数插值；
-    - 如果需要回落阶段，可在峰值保持后追加下降段逻辑。
     """
 
-    start_users = _env_int("LOCUST_SHAPE_START_USERS", settings.SHAPE_START_USERS)
-    step_users = _env_int("LOCUST_SHAPE_STEP_USERS", settings.SHAPE_STEP_USERS)
-    step_duration = _env_int("LOCUST_SHAPE_STEP_DURATION", settings.SHAPE_STEP_DURATION)
-    peak_users = _env_int("LOCUST_SHAPE_PEAK_USERS", settings.SHAPE_PEAK_USERS)
-    peak_hold_time = _env_int("LOCUST_SHAPE_PEAK_HOLD_TIME", settings.SHAPE_PEAK_HOLD_TIME)
-    total_time_limit = _env_int("LOCUST_SHAPE_TOTAL_TIME_LIMIT", settings.SHAPE_TOTAL_TIME_LIMIT)
-    spawn_rate = max(1, _env_int("LOCUST_SPAWN_RATE", settings.LOCUST_SPAWN_RATE))
+    SHAPE_DEFAULTS = SHAPE_DEFAULTS
+    SHAPE_PARAMS = SHAPE_PARAMS
 
     def tick(self):
         run_time = self.get_run_time()
 
-        # 总时长限制优先级最高（满足后立即停止）。
         if self.total_time_limit > 0 and run_time >= self.total_time_limit:
             return None
 
