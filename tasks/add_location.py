@@ -54,9 +54,9 @@ DEFAULT_PAYLOAD: AddLocationPayload = {
 
 def build_request_headers(session: UserSession) -> dict[str, str]:
     headers = dict(HEADERS)
-    session_id = session.php_session_id()
+    session_id = session.get_session_id()
     if session_id:
-        headers["session"] = session_id
+        headers["session"] = f"session_id={session_id}"
     return headers
 
 
